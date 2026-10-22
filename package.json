@@ -1,0 +1,90 @@
+{
+  "name": "jarvis-assistant",
+  "productName": "Jarvis",
+  "version": "1.0.0",
+  "description": "Voice-first AI desktop assistant powered by the opencode agent harness",
+  "main": "out/main/index.js",
+  "author": "Jarvis contributors",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "models": "tsx scripts/download-models.mts",
+    "dist": "electron-vite build && electron-builder --win --x64",
+    "test": "tsx --test tests/*.test.mts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "open-computer-use": "^1.1.2",
+    "opencode-ai": "^1.19.4",
+    "sherpa-onnx-node": "^1.13.8",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "framer-motion": "^14.6.0",
+    "lucide-react": "^1.61.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "zustand": "^5.0.16"
+  },
+  "build": {
+    "appId": "com.jarvis.assistant",
+    "productName": "Jarvis",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/sherpa-onnx-node/**",
+      "node_modules/sherpa-onnx-win-x64/**",
+      "node_modules/opencode-windows-x64/**",
+      "node_modules/opencode-ai/**",
+      "out/main/**",
+      "node_modules/open-computer-use/**"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": ".",
+        "filter": [
+          "bridge.ps1",
+          "icon.png"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "shortcutName": "Jarvis"
+    }
+  },
+  "homepage": "https://github.com/"
+}

@@ -1,0 +1,554 @@
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, screen, session, shell, Tray, desktopCapturer } from 'electron'
+import { join } from 'path'
+import { existsSync, writeFileSync } from 'fs'
+import { IPC, type Settings, type SetupProgress } from '../shared/types'
+import { Assistant } from './assistant'
+import { dataDir } from './store'
+import { listAssets, installAsset } from './models'
+import { rendererUrl, preloadPath, resourcePath } from './paths'
+import { initLogging, logDir } from './log'
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+  process.exit(0)
+}
+app.setName('Jarvis')
+initLogging()
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+app.commandLine.appendSwitch('js-flags', '--expose-gc') // lets the speech worker hand model memory back when idle
+
+let assistant: Assistant
+let mainWin: BrowserWindow | null = null
+let hudWin: BrowserWindow | null = null
+let audioWin: BrowserWindow | null = null
+let tray: Tray | null = null
+let quitting = false
+
+const all = () => [mainWin, hudWin, audioWin].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
+const broadcast = (ch: string, ...args: unknown[]) => all().forEach((w) => w.webContents.send(ch, ...args))
+const toUi = (ch: string, ...args: unknown[]) => [mainWin, hudWin].forEach((w) => w && !w.isDestroyed() && w.webContents.send(ch, ...args))
+
+function iconImage() {
+  const p = resourcePath('icon.png')
+  return existsSync(p) ? nativeImage.createFromPath(p) : nativeImage.createEmpty()
+}
+
+function createMain() {
+  const s = assistant.settings()
+  mainWin = new BrowserWindow({
+    width: 1180,
+    height: 760,
+    minWidth: 900,
+    minHeight: 600,
+    show: false,
+    frame: false,
+    backgroundColor: '#05080d',
+    title: 'Jarvis',
+    icon: iconImage(),
+    webPreferences: { preload: preloadPath(), backgroundThrottling: false }
+  })
+  mainWin.on('ready-to-show', () => {
+    if (!s.startMinimized) mainWin?.show()
+  })
+  // closing to the tray DESTROYS the window (≈200 MB of renderer memory); showMain() rebuilds it from main-process state
+  mainWin.on('closed', () => {
+    mainWin = null
+    syncHud()
+  })
+  mainWin.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  // the HUD would sit on top of the main window, so it only shows while the main window is not in use
+  for (const ev of ['focus', 'blur', 'show', 'hide', 'minimize', 'restore', 'move', 'resize', 'maximize', 'unmaximize'] as const) mainWin.on(ev as any, syncHud)
+  void mainWin.loadURL(rendererUrl('index.html'))
+}
+
+function syncHud() {
+  if (!hudWin || hudWin.isDestroyed()) return
+  // never draw the HUD on top of the main window: hide it only while the two rectangles intersect
+  // permission cards must always be reachable: grow the HUD, make it clickable, and keep it visible
+  if (pendingPerms.size > 0) {
+    hudWin.setBounds(hudBounds(assistant.settings().hudCorner, 200 * pendingPerms.size))
+    hudWin.setIgnoreMouseEvents(false)
+    hudWin.setFocusable(true)
+    if (!hudWin.isVisible()) hudWin.showInactive()
+    return
+  }
+  hudWin.setBounds(hudBounds(assistant.settings().hudCorner))
+  hudWin.setFocusable(false)
+  hudWin.setIgnoreMouseEvents(true, { forward: true })
+  let overlaps = false
+  if (mainWin && !mainWin.isDestroyed() && mainWin.isVisible() && !mainWin.isMinimized()) {
+    const a = mainWin.getBounds()
+    const b = hudWin.getBounds()
+    overlaps = a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
+  }
+  if (overlaps) hudWin.hide()
+  else if (!hudWin.isVisible()) hudWin.showInactive()
+}
+
+const pendingPerms = new Set<string>()
+
+function hudBounds(corner: Settings['hudCorner'], extra = 0) {
+  const wa = screen.getPrimaryDisplay().workArea
+  const w = 440
+  const h = Math.min(wa.height - 40, 260 + extra)
+  const m = 14
+  const x = corner.endsWith('r') ? wa.x + wa.width - w - m : wa.x + m
+  const y = corner.startsWith('b') ? wa.y + wa.height - h - m : wa.y + m
+  return { x, y, width: w, height: h }
+}
+
+function createHud() {
+  hudWin = new BrowserWindow({
+    ...hudBounds(assistant.settings().hudCorner),
+    transparent: true,
+    frame: false,
+    resizable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+    show: false,
+    webPreferences: { preload: preloadPath(), backgroundThrottling: false }
+  })
+  hudWin.setAlwaysOnTop(true, 'floating')
+  hudWin.setIgnoreMouseEvents(true, { forward: true })
+  hudWin.once('ready-to-show', syncHud)
+  void hudWin.loadURL(rendererUrl('hud.html'))
+}
+
+function createAudioHost() {
+  audioWin = new BrowserWindow({
+    show: false,
+    width: 200,
+    height: 120,
+    webPreferences: { preload: preloadPath(), backgroundThrottling: false }
+  })
+  void audioWin.loadURL(rendererUrl('audio.html'))
+}
+
+function showMain() {
+  if (!mainWin || mainWin.isDestroyed()) createMain()
+  mainWin!.show()
+  mainWin!.focus()
+}
+
+function registerHotkey() {
+  globalShortcut.unregisterAll()
+  globalShortcut.register('Control+Alt+K', () => assistant.emergencyStop())
+  const key = assistant.settings().hotkey
+  if (!key) return
+  try {
+    if (!globalShortcut.register(key, () => assistant.toggleListen())) console.warn('hotkey busy', key)
+  } catch (e) {
+    console.warn('bad hotkey', key, e)
+  }
+}
+
+function applyAutoStart() {
+  app.setLoginItemSettings({ openAtLogin: assistant.settings().autoStart, args: ['--hidden'] })
+}
+
+function buildTray() {
+  tray = new Tray(iconImage().resize({ width: 16, height: 16 }))
+  tray.setToolTip('Jarvis')
+  const menu = () =>
+    Menu.buildFromTemplate([
+      { label: 'Open Jarvis', click: showMain },
+      { label: 'Listen now', click: () => assistant.toggleListen() },
+      {
+        label: 'Wake word active',
+        type: 'checkbox',
+        checked: assistant.settings().wakeEnabled,
+        click: (m) => applySettings({ wakeEnabled: m.checked })
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit',
+        click: () => {
+          quitting = true
+          app.quit()
+        }
+      }
+    ])
+  tray.setContextMenu(menu())
+  tray.on('click', showMain)
+  assistant.settingsStore.on('change', () => tray?.setContextMenu(menu()))
+}
+
+function applySettings(patch: Partial<Settings>) {
+  const before = assistant.settings()
+  const next = assistant.settingsStore.set(patch)
+  broadcast(IPC.settingsChanged, next)
+  if (patch.sttModel && patch.sttModel !== before.sttModel) assistant.speech.restart()
+  else if ('wakePhrases' in patch || 'wakeSensitivity' in patch || 'wakeEnabled' in patch || 'sttLanguage' in patch) assistant.speech.updateConfig()
+  if (patch.apiKey !== undefined && patch.apiKey !== before.apiKey) void assistant.opencode.applyAuth().then(() => assistant.opencode.listModels(true))
+  if ((patch.permissionMode && patch.permissionMode !== before.permissionMode) || (patch.cwd !== undefined && patch.cwd !== before.cwd) || (patch.customProvider && JSON.stringify(patch.customProvider) !== JSON.stringify(before.customProvider)) || (patch.connectors && JSON.stringify(patch.connectors) !== JSON.stringify(before.connectors)))
+    void assistant.opencode.restart()
+  if (patch.hotkey !== undefined) registerHotkey()
+  if (patch.autoStart !== undefined) applyAutoStart()
+  if (patch.hudCorner) hudWin?.setBounds(hudBounds(patch.hudCorner))
+  if (patch.cloneIdleMinutes !== undefined) assistant.xtts.idleMinutes = patch.cloneIdleMinutes
+  if ('fishApiKey' in patch || 'fishVoiceRu' in patch || 'fishVoiceEn' in patch || 'fishModel' in patch) {
+    assistant.resetFishState()
+    assistant.prewarmVoices()
+  }
+  if (patch.voiceRu || patch.voiceEn) assistant.prewarmVoices()
+  assistant.emitStatus()
+  return next
+}
+
+function wireIpc() {
+  ipcMain.handle(IPC.settingsGet, () => assistant.settings())
+  ipcMain.handle(IPC.settingsSet, (_e, patch: Partial<Settings>) => applySettings(patch))
+  ipcMain.handle('status:get', () => assistant.status())
+  ipcMain.handle(IPC.chatHistory, () => assistant.opencode.history())
+  ipcMain.handle(IPC.sendText, (_e, text: string) => assistant.handleCommand(text, 'text'))
+  ipcMain.handle(IPC.abort, () => assistant.abortTask())
+  ipcMain.handle(IPC.chatReset, () => assistant.opencode.newThread())
+  ipcMain.handle(IPC.threads, () => assistant.threads.state())
+  ipcMain.handle(IPC.threadNew, () => assistant.opencode.newThread())
+  ipcMain.handle(IPC.threadSwitch, (_e, id: string) => assistant.opencode.switchThread(id))
+  ipcMain.handle(IPC.threadDelete, (_e, id: string) => assistant.opencode.deleteThread(id))
+  ipcMain.handle(IPC.threadRename, (_e, id: string, title: string) => assistant.threads.rename(id, title))
+  ipcMain.handle(IPC.models, (_e, fetchAll: boolean) => assistant.opencode.listModels(fetchAll))
+  ipcMain.handle(IPC.permissionReply, (_e, id: string, answer: any) => {
+    pendingPerms.delete(id)
+    toUi(IPC.permissionClose, id) // answered here → close the mirrored card in the other window too
+    syncHud()
+    return assistant.replyPermission(id, answer)
+  })
+  ipcMain.handle(IPC.toggleListen, () => assistant.toggleListen())
+
+  ipcMain.handle(IPC.modelAssets, () => listAssets(dataDir()))
+  ipcMain.handle(IPC.modelDownload, async (_e, ids: string[]) => {
+    for (const id of ids) {
+      try {
+        await installAsset(dataDir(), id, (p: SetupProgress) => toUi(IPC.modelProgress, p))
+      } catch (e) {
+        console.error('download failed', id, e)
+      }
+    }
+    assistant.prewarmVoices()
+    if (!assistant.speech.ready && !assistant.speech.missing().length) assistant.speech.start()
+    assistant.emitStatus()
+    return listAssets(dataDir())
+  })
+
+  ipcMain.handle(IPC.routines, () => assistant.routines.list())
+  ipcMain.handle(IPC.routinesSave, (_e, r) => assistant.routines.save1(r))
+  ipcMain.handle(IPC.routinesDelete, (_e, id: string) => assistant.routines.delete(id))
+  ipcMain.handle(IPC.routinesRun, (_e, id: string) => {
+    const r = assistant.routines.get(id)
+    return r ? assistant.runRoutine(r) : 'not found'
+  })
+  ipcMain.handle(IPC.memory, () => assistant.memory.list())
+  ipcMain.handle(IPC.memoryAdd, (_e, text: string) => assistant.memory.add(text, [], false))
+  ipcMain.handle(IPC.memoryDelete, (_e, id: string) => assistant.memory.delete(id))
+  ipcMain.handle(IPC.memoryPin, (_e, id: string, pinned: boolean) => assistant.memory.pin(id, pinned))
+
+  ipcMain.handle(IPC.openPath, (_e, p: string) => shell.openPath(p))
+  ipcMain.handle('app:dataDir', () => dataDir())
+  ipcMain.handle('app:openLogs', () => shell.openPath(logDir()))
+  // only ever opens plain https links (key pages) in the user's browser
+  ipcMain.handle('app:openUrl', (_e, url: string) => (/^https:\/\//.test(String(url)) ? shell.openExternal(url) : undefined))
+  ipcMain.handle('connectors:status', () => assistant.opencode.mcpStatus())
+  ipcMain.handle('connectors:auth', (_e, id: string) => assistant.opencode.mcpAuthenticate(String(id)))
+  ipcMain.handle('connectors:reconnect', async (_e, id: string) => {
+    await assistant.opencode.mcpReconnect(String(id))
+    return assistant.opencode.mcpStatus()
+  })
+  ipcMain.handle('connectors:signout', async (_e, id: string) => {
+    await assistant.opencode.mcpSignOut(String(id))
+    return assistant.opencode.mcpStatus()
+  })
+  ipcMain.handle('providers:list', () => assistant.opencode.providers())
+  ipcMain.handle('providers:connect', async (_e, id: string, key: string) => {
+    await assistant.opencode.connectProvider(id, key)
+    return true
+  })
+  ipcMain.handle('providers:disconnect', async (_e, id: string) => {
+    await assistant.opencode.disconnectProvider(id)
+    return true
+  })
+  ipcMain.handle('app:info', () => {
+    const st = assistant.status()
+    const mem = process.memoryUsage()
+    return {
+      version: app.getVersion(),
+      electron: process.versions.electron,
+      node: process.versions.node,
+      chrome: process.versions.chrome,
+      platform: `${process.platform} ${process.arch}`,
+      dataDir: dataDir(),
+      logDir: logDir(),
+      status: st,
+      model: assistant.settings().model,
+      assets: listAssets(dataDir()).filter((a) => a.installed).map((a) => a.id),
+      cloneAvailable: assistant.xtts.available(),
+      asrLoaded: assistant.speech.asrLoaded,
+      mainRssMB: Math.round(mem.rss / 1048576)
+    }
+  })
+  ipcMain.handle(IPC.captureForUi, async () => {
+    const img = await mainWin?.webContents.capturePage()
+    return img?.toPNG()
+  })
+  ipcMain.handle('voice:extra', () => {
+    const s = assistant.settings()
+    const out: { id: string; name: string; lang: 'ru' | 'en' | 'both' }[] = []
+    if (s.fishApiKey) out.push({ id: 'fish:ru', name: 'Fish Audio — Jarvis (RU, cloud)', lang: 'ru' })
+    if (s.fishApiKey) out.push({ id: 'fish:en', name: 'Fish Audio — Jarvis (EN, cloud)', lang: 'en' })
+    if (assistant.xtts.available()) out.push({ id: 'xtts:jarvis', name: 'Jarvis — cloned from your clips (local GPU, RU + EN)', lang: 'both' })
+    return out
+  })
+  ipcMain.handle('voice:preview', async (_e, text: string, voice: string) => {
+    const lang = /[а-яё]/i.test(text) ? 'ru' : 'en'
+    const wav = await assistant.tts.synth(text, voice, assistant.settings().voiceSpeed, lang)
+    toUi('noop')
+    audioWin?.webContents.send(IPC.ttsPlay, { id: 'preview-' + Date.now(), wav, fx: assistant.settings().voiceFx, volume: assistant.settings().voiceVolume })
+  })
+  ipcMain.handle('ocr:langs', async () => {
+    try {
+      return await assistant.powershell(
+        "Add-Type -AssemblyName System.Runtime.WindowsRuntime; [void][Windows.Media.Ocr.OcrEngine,Windows.Foundation,ContentType=WindowsRuntime]; ([Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages | ForEach-Object { $_.LanguageTag }) -join ','"
+      )
+    } catch {
+      return ''
+    }
+  })
+
+  ipcMain.on(IPC.window, (e, action: string) => {
+    const w = BrowserWindow.fromWebContents(e.sender)
+    if (!w) return
+    if (action === 'minimize') w.minimize()
+    else if (action === 'maximize') (w.isMaximized() ? w.unmaximize() : w.maximize())
+    else if (action === 'close') w.close()
+    else if (action === 'showMain') showMain()
+    else if (action === 'hud-interactive') hudWin?.setIgnoreMouseEvents(false)
+    else if (action === 'hud-passthrough') hudWin?.setIgnoreMouseEvents(true, { forward: true })
+  })
+
+  // audio host → speech engine
+  ipcMain.on(IPC.audioChunk, (_e, buf: ArrayBuffer) => assistant.speech.feed(buf))
+  ipcMain.on(IPC.micLevel, (_e, level: number) => toUi(IPC.micLevel, level))
+  ipcMain.on(IPC.ttsLevel, (_e, level: number) => toUi(IPC.ttsLevel, level))
+  ipcMain.on(IPC.ttsEnded, (_e, id: string) => assistant.onPlayEnded(id))
+}
+
+function wireAssistantEvents() {
+  assistant.on('status', (s) => broadcast(IPC.status, s))
+  assistant.on('chat', (item) => toUi(IPC.chat, item))
+  assistant.on('permission', (r) => {
+    pendingPerms.add(r.id)
+    toUi(IPC.permission, r)
+    syncHud()
+  })
+  assistant.routines.on('change', () => toUi(IPC.routinesChanged))
+  assistant.threads.on('change', () => toUi(IPC.threadsChanged, assistant.threads.state()))
+  assistant.on('chatReset', () => toUi(IPC.chatReset))
+  assistant.memory.on('change', () => toUi(IPC.memoryChanged))
+  assistant.on('permissionClose', (id) => {
+    pendingPerms.delete(id)
+    toUi(IPC.permissionClose, id)
+    syncHud()
+  })
+  assistant.on('subtitle', (t: string) => toUi(IPC.subtitle, t))
+  assistant.on('partial', (t: string) => toUi(IPC.transcript, t))
+  assistant.on('play', (req) => audioWin?.webContents.send(IPC.ttsPlay, req))
+  assistant.on('stopPlayback', () => audioWin?.webContents.send(IPC.ttsStop))
+  assistant.on('wake', () => audioWin?.webContents.send('audio:earcon', 'wake'))
+  assistant.on('earcon', (kind: string) => audioWin?.webContents.send('audio:earcon', kind))
+}
+
+async function debugPrompts(list: string[]) {
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+  while (assistant.opencode.status !== 'ready') await wait(500)
+  if (process.env.JARVIS_AUTOYES) assistant.on('permission', (r: any) => setTimeout(() => void assistant.replyPermission(r.id, r.options?.[0] ?? 'once'), 1800))
+  assistant.on('chat', (it: any) => {
+    if (it.kind === 'assistant' && !it.done) return
+    const body = it.kind === 'tool' ? `${it.tool.tool} [${it.tool.status}] ${JSON.stringify(it.tool.input ?? {}).slice(0, 160)} -> ${(it.tool.output ?? '').slice(0, 700).split('\n').join(' | ')}` : it.text
+    console.log(`[e2e] ${it.kind}: ${body}`)
+  })
+  if (process.env.JARVIS_ABORT_AFTER) setTimeout(() => { console.log('[e2e] *** ABORT'); void assistant.abortTask() }, Number(process.env.JARVIS_ABORT_AFTER))
+  for (const p of list) {
+    console.log('[e2e] >>> ' + p)
+    if (p.startsWith('!')) {
+      await assistant.handleCommand(p.slice(1), 'voice')
+      await wait(3500)
+      continue
+    }
+    await assistant.handleCommand(p, 'voice')
+    await new Promise<void>((r) => assistant.opencode.once('turnEnd', () => setTimeout(r, 1500)))
+  }
+  await mainWin?.webContents.executeJavaScript("window.__setPage && window.__setPage('assistant')")
+  await new Promise((r) => setTimeout(r, 800))
+  await new Promise((r) => setTimeout(r, 700))
+  if (process.env.JARVIS_SHOTS) writeFileSync(join(process.env.JARVIS_SHOTS, 'chat.png'), (await mainWin!.webContents.capturePage()).toPNG())
+  if (process.env.JARVIS_SHOTS) {
+    mainWin?.show()
+    mainWin?.setAlwaysOnTop(true, 'screen-saver') // a fullscreen video must not hide the window we are capturing
+    mainWin?.moveTop()
+    await new Promise((r) => setTimeout(r, 1200))
+    await assistant.win.call('screenshot', { path: join(process.env.JARVIS_SHOTS, 'chat-desktop.png') })
+    await mainWin?.webContents.executeJavaScript("document.querySelectorAll('.thread-bar .btn')[0]?.click(); document.querySelector('.think > button')?.click()")
+    await new Promise((r) => setTimeout(r, 900))
+    await assistant.win.call('screenshot', { path: join(process.env.JARVIS_SHOTS, 'process-desktop.png') })
+    mainWin?.setAlwaysOnTop(false)
+  }
+  console.log('[e2e] finished')
+}
+
+async function debugShots(dir: string) {
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+  await wait(7000)
+  const shot = async (w: BrowserWindow | null, name: string) => {
+    if (!w || w.isDestroyed()) return
+    const img = await w.webContents.capturePage()
+    writeFileSync(join(dir, name + '.png'), img.toPNG())
+  }
+  for (const p of ['assistant', 'routines', 'memory', 'settings']) {
+    await mainWin?.webContents.executeJavaScript(`window.__setPage && window.__setPage('${p}')`)
+    await wait(900)
+    await shot(mainWin, 'main-' + p)
+    if (p === 'settings') {
+      for (let i = 0; i < 7; i++) {
+        await mainWin?.webContents.executeJavaScript(`document.querySelectorAll('.subnav-item')[${i}]?.click()`)
+        await wait(700)
+        await shot(mainWin, 'main-settings-' + i)
+      }
+    }
+  }
+  await shot(hudWin, 'hud')
+  if (process.env.JARVIS_OVERLAY) {
+    mainWin?.show()
+    const b = mainWin!.getBounds()
+    const sf = screen.getPrimaryDisplay().scaleFactor
+    await mainWin?.webContents.executeJavaScript("window.__setPage('assistant')")
+    assistant.emit('permission', { id: 'ask-demo', kind: 'question', title: 'Мне нужно смотреть на экран и управлять мышью и клавиатурой. Разрешаете на этот чат?', options: ['Разрешить для чата', 'Отклонить'] })
+    await wait(1200)
+    await shot(hudWin, 'hud-permission')
+    await shot(mainWin, 'chat-permission')
+    await assistant.win.call('screenshot', { path: join(dir, 'desktop-permission.png') })
+    assistant.emit('permissionClose', 'ask-demo')
+    await wait(500)
+    await assistant.overlay.setControl(true, 'управляет компьютером · Ctrl+Alt+K — стоп')
+    await assistant.overlay.show([
+      { x: (b.x + 100) * sf, y: (b.y + 60) * sf, w: 360 * sf, h: 60 * sf, label: 'Orb — current state', shape: 'box' },
+      { x: (b.x + 700) * sf, y: (b.y + 500) * sf, w: 200 * sf, h: 40 * sf, label: 'Try this', shape: 'underline' }
+    ])
+    await wait(1600)
+    await assistant.win.call('screenshot', { path: join(dir, 'overlay.png') })
+    assistant.overlay.clear()
+    await assistant.overlay.setControl(false)
+  }
+  console.log('[shots] done')
+}
+
+app.on('second-instance', showMain)
+app.on('before-quit', () => {
+  quitting = true
+})
+app.on('will-quit', () => globalShortcut.unregisterAll())
+app.on('window-all-closed', () => {})
+
+app.whenReady().then(async () => {
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(['media', 'audioCapture', 'clipboard-sanitized-write'].includes(permission)))
+  session.defaultSession.setPermissionCheckHandler(() => true)
+  assistant = new Assistant()
+  wireIpc()
+  wireAssistantEvents()
+  createAudioHost()
+  createMain()
+  createHud()
+  buildTray()
+  registerHotkey()
+  applyAutoStart()
+  await assistant.init()
+  if (process.env.JARVIS_TEST_WAIT) {
+    await new Promise((r) => setTimeout(r, 4000))
+    const c = assistant.mcp.computer
+    const t0 = Date.now()
+    const r = await c.waitStable({ timeoutSec: 12, epoch: c.begin() })
+    console.log(`[wait-test] stable=${r.stable} waited=${r.waitedMs}ms total=${Date.now() - t0}ms title="${r.title}"`)
+  }
+  if (process.env.JARVIS_TEST_OCU) {
+    await new Promise((r) => setTimeout(r, 3000))
+    try {
+      const t0 = Date.now()
+      const apps = await assistant.mcp.ocu.call('list_apps', {})
+      console.log(`[ocu-test] list_apps ${Date.now() - t0}ms: ${apps.text.split(String.fromCharCode(10)).length} lines`)
+      const t1 = Date.now()
+      const st = await assistant.mcp.ocu.call('get_app_state', { app: process.env.JARVIS_TEST_OCU, max_tree_nodes: 200, text_limit: 200 })
+      console.log(`[ocu-test] get_app_state ${Date.now() - t1}ms: ${st.text.length} chars, image=${!!st.image}, err=${st.isError}`)
+      console.log('[ocu-test] head:', st.text.split(String.fromCharCode(10)).slice(0, 6).join(' | ').slice(0, 400))
+    } catch (e: any) {
+      console.log('[ocu-test] FAILED', e.message)
+    }
+  }
+  if (process.env.JARVIS_FEED) {
+    // feed 16 kHz mono wav files through the real engine (worker + ASR child) and log what comes out
+    const { readFileSync } = await import('fs')
+    assistant.speech.on('event', (e: any) => {
+      if (e.type !== 'partial') console.log('[feed]', JSON.stringify(e).slice(0, 260))
+    })
+    await new Promise((r) => setTimeout(r, 4000))
+    for (const f of (process.env.JARVIS_FEED as string).split(';')) {
+      const b = readFileSync(f)
+      const pcm = new Int16Array(b.buffer.slice(b.byteOffset + 44, b.byteOffset + b.length - ((b.length - 44) % 2)))
+      const all = new Float32Array(16000 * 2 + pcm.length)
+      for (let i = 0; i < pcm.length; i++) all[16000 + i] = pcm[i] / 32768
+      console.log('[feed] >>>', f)
+      for (let o = 0; o < all.length; o += 1600) {
+        assistant.speech.feed(all.slice(o, o + 1600).buffer)
+        await new Promise((r) => setTimeout(r, 8))
+      }
+      await new Promise((r) => setTimeout(r, 4000))
+    }
+    console.log('[feed] done')
+  }
+  if (process.env.JARVIS_TEST_SAY) {
+    await new Promise((r) => setTimeout(r, 5000))
+    const st = assistant.settings()
+    console.log('[say-test] voices:', st.voiceRu, st.voiceEn)
+    for (const line of ['Добрый вечер, сэр. Все системы работают в штатном режиме.', 'Good evening, sir. Everything is in order.']) {
+      const t0 = Date.now()
+      await assistant.say(line)
+      console.log(`[say-test] "${line.slice(0, 24)}…" done in ${Date.now() - t0}ms`)
+    }
+  }
+  if (process.env.JARVIS_TEST_ACK) {
+    await new Promise((r) => setTimeout(r, 6000))
+    for (const lang of ['ru', 'ru', 'en', 'en']) {
+      const t0 = Date.now()
+      await assistant.ack(lang)
+      console.log(`[ack-test] ${lang} played in ${Date.now() - t0}ms`)
+      await new Promise((r) => setTimeout(r, 400))
+    }
+  }
+  if (process.env.JARVIS_TEST_CLONE) {
+    const t0 = Date.now()
+    assistant.xtts
+      .synth('Добрый вечер, сэр.', 'ru', 1)
+      .then((b) => console.log(`[clone-test] OK ${b.length} bytes in ${Date.now() - t0}ms`))
+      .catch((e) => console.log('[clone-test] FAILED', e.message))
+  }
+  if (process.env.JARVIS_NARROW) {
+    await new Promise((r) => setTimeout(r, 9000))
+    mainWin?.setMinimumSize(560, 600)
+    mainWin?.setSize(680, 760)
+    await new Promise((r) => setTimeout(r, 1200))
+    await mainWin?.webContents.executeJavaScript("window.__setPage('assistant'); window.__demoLong(); setTimeout(() => { const f=document.querySelector('.feed'); f && (f.scrollTop=f.scrollHeight) }, 300)")
+    await new Promise((r) => setTimeout(r, 800))
+    writeFileSync(join(process.env.JARVIS_NARROW, 'narrow.png'), (await mainWin!.webContents.capturePage()).toPNG())
+    const info = await mainWin?.webContents.executeJavaScript("(() => { const m=[...document.querySelectorAll('.msg.assistant')].pop(); if(!m) return 'no msg'; const c=m.querySelector('.clamp'); const b=m.querySelector('.more'); const r=(e)=>e&&JSON.stringify(e.getBoundingClientRect()); return 'msg '+r(m)+' clamp '+r(c)+' more '+r(b)+' display:'+getComputedStyle(m).display })()")
+    console.log('[narrow]', info)
+    await mainWin?.webContents.executeJavaScript("document.querySelectorAll('.thread-bar .btn')[0]?.click()")
+    await new Promise((r) => setTimeout(r, 1200))
+    writeFileSync(join(process.env.JARVIS_NARROW, 'drawer.png'), (await mainWin!.webContents.capturePage()).toPNG())
+  }
+  if (process.env.JARVIS_SHOTS) void debugShots(process.env.JARVIS_SHOTS)
+  if (process.env.JARVIS_PROMPTS) void debugPrompts(JSON.parse(process.env.JARVIS_PROMPTS))
+})
