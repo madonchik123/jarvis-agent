@@ -1,0 +1,58 @@
+name: Release
+
+# Push a tag like v1.0.0 (or run manually) to build the Windows installer and attach it to a GitHub Release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Package installer
+        run: npx electron-builder --win --x64 --publish never
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem release -Filter '*.exe' | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$h  $($_.Name)" | Out-File -Encoding ascii "release\SHA256SUMS.txt" -Append
+          }
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $notes = @"
+          ## Jarvis $tag — Windows
+
+          Download **Jarvis Setup *.exe** below and run it (Windows 10/11 x64).
+          The installer is unsigned, so SmartScreen may warn: *More info → Run anyway*.
+
+          On first run Jarvis downloads its on-device speech models (~350 MB). The AI agent works with free opencode models without a key.
+          Setup guide, connectors and everything it can do: see the README.
+
+          **Platform support:** Windows only for now — computer use, OCR and window control rely on Windows APIs. macOS/Linux are not supported yet.
+          "@
+          gh release create $tag (Get-ChildItem release -Filter '*.exe').FullName release\SHA256SUMS.txt --title "Jarvis $tag" --notes "$notes"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-windows
+          path: |
+            release/*.exe
+            release/SHA256SUMS.txt

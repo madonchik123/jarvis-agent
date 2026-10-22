@@ -61,7 +61,7 @@ opencode serve (agent)  ·  MCP tools  ·  Open Computer Use (accessibility)  ·
 
 ## Requirements
 
-* **Windows 10/11 x64** (the computer-use and OCR layers are Windows-specific).
+* **Windows 10/11 x64.** macOS and Linux are **not supported yet**: computer use, OCR, window control and the Open Computer Use backend rely on Windows APIs (UI Automation / Windows OCR / SendInput), so there are no installers for those systems. A port is possible but is a separate piece of work — contributions welcome.
 * A microphone. ~1 GB free RAM, ~1 GB disk (speech models are downloaded on first run, ~350 MB core).
 * For development: **Node.js 22+** and Git.
 * Optional: **uv** (<https://docs.astral.sh/uv>) or **Node.js** on your PATH for some connectors that run locally; an NVIDIA GPU (≥6 GB VRAM) only for the XTTS clone.
