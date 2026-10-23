@@ -5,7 +5,8 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const out = join(here, 'build', 'voice')
+// node promo/make-voice.mjs [script.json] [outDir]
+const out = join(here, 'build', process.argv[3] || 'voice')
 mkdirSync(out, { recursive: true })
 
 const settings = JSON.parse(readFileSync(join(process.env.APPDATA, 'Jarvis', 'settings.json'), 'utf8'))
@@ -13,7 +14,7 @@ const key = settings.fishApiKey
 const voice = settings.fishVoiceRu || '680d74fbef69419f87cfc70f092a1451'
 if (!key) throw new Error('Fish API key is not set in Jarvis settings')
 
-export const LINES = JSON.parse(readFileSync(join(here, 'script.json'), 'utf8')).lines
+export const LINES = JSON.parse(readFileSync(join(here, process.argv[2] || 'script.json'), 'utf8')).lines
 
 for (const l of LINES) {
   const res = await fetch('https://api.fish.audio/v1/tts', {

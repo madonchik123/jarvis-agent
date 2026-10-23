@@ -35,3 +35,4 @@ promo/out
 resources/native/
 native/**/bin/
 native/**/obj/
+resources/vendor/

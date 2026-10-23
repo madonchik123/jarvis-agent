@@ -34,14 +34,15 @@ opencode serve (agent)  ·  MCP tools & connectors  ·  jarvis-native (C#: UI Au
 8. [Voices](#voices)
 9. [Connectors (Gmail, Calendar, Notion, GitHub…)](#connectors-gmail-calendar-notion-github)
 10. [Computer use & system control](#computer-use--system-control)
-11. [Speech recognition](#speech-recognition)
-12. [Voice commands (routines) and memory](#voice-commands-routines-and-memory)
-13. [Updates](#updates)
-14. [Resource use](#resource-use)
-15. [Troubleshooting](#troubleshooting)
-16. [Privacy & safety](#privacy--safety)
-17. [Development](#development)
-18. [Licence](#licence)
+11. [Documents & presentations](#documents--presentations)
+12. [Speech recognition](#speech-recognition)
+13. [Voice commands (routines) and memory](#voice-commands-routines-and-memory)
+14. [Updates](#updates)
+15. [Resource use](#resource-use)
+16. [Troubleshooting](#troubleshooting)
+17. [Privacy & safety](#privacy--safety)
+18. [Development](#development)
+19. [Licence](#licence)
 
 ---
 
@@ -54,6 +55,7 @@ opencode serve (agent)  ·  MCP tools & connectors  ·  jarvis-native (C#: UI Au
 | **A real agent with a character** | opencode with a custom `jarvis` agent: shell, files, web, MCP tools, permission levels (ask / auto-confirm-risky / full). The persona is the film Jarvis — composed, precise, dry wit, "sir". Works with free models out of the box; 230+ providers via your own key. |
 | **Computer use in any app** | A native **C# engine** (`jarvis-native.exe`) modelled on the documented Codex computer-use window API: windows by id, an **indexed accessibility tree** plus an occlusion-proof screenshot per window (`get_app_state`), then `click` / `set_value` / `type_text` / `press_key` / `scroll` / `drag` / `paste` / `perform_secondary_action` — each activates its window and waits for the UI to settle, returning the refreshed tree. Fallbacks for apps without accessibility (Telegram, Discord, games): OCR screen map, `click_text`, `type`, wheel scroll, mouse, held keys and timed **key/mouse sequences**. A vision model can read icons and images. |
 | **System control** | Instant commands without the model («громче», «пауза», «следующий трек», «сверни все окна», "volume 40"), plus tools for the agent: master and per-app **volume**, media keys, **window** move / resize / snap / minimise / close / topmost, show desktop, lock, brightness. |
+| **Documents & presentations** | "Write my coursework on…", "make a 10-slide deck about…", "fix the introduction in this file": real **DOCX** (Word styles, title page, table of contents, captions, page numbers; Russian GOST template for coursework), designed **PPTX** decks (6 themes, 11 layouts, speaker notes), **PDF**; finds free-licence **photos** (credited) and draws **diagrams and charts** itself; reads DOCX / PDF / PPTX / XLSX and edits DOCX in place without breaking its formatting; converts through Word / PowerPoint / LibreOffice when installed. |
 | **Highlight while speaking** | `jarvis_say(highlight=[{find:"Settings"}])` outlines the thing on every monitor while the sentence is spoken. |
 | **Follow-up questions** | The agent can *ask* you something; the mic opens immediately and you can answer by voice, or tap/type the answer on the HUD or in the chat. |
 | **Spoken output = the gist** | The model chooses a short spoken line; the full answer stays on screen (collapsed), with a *Thinking* pill and a **Process** drawer (reasoning + timed tool steps). |
@@ -184,6 +186,22 @@ Tools the agent has (all prefixed `jarvis_`):
 
 The engine is `native/JarvisNative` (C#, .NET Framework 4.8, ~70 KB exe, starts in ~0.2 s): UI Automation with cached property reads, `PrintWindow` capture that works for covered windows, SendInput with layout-independent key names, Windows OCR (Russian + English), Core Audio for volume. Protocol: JSON lines on stdin/stdout (`scripts/test-native.mts` is a smoke test).
 
+## Documents & presentations
+
+Just ask: "write a report on…", "make a 10-slide deck for my defence", "read this PDF and summarise it", "add a methods section to my coursework", "save it as PDF". Files go to **Documents\Jarvis** (or wherever you say) and are opened for you.
+
+| Tool | What it does |
+|---|---|
+| `doc_create` | DOCX (or PDF) from structure: headings, paragraphs with **bold** / *italic*, lists, tables and figures with auto-numbered captions, quotes, call-outs, references. Templates: **gost** (Russian university rules: Times New Roman 14, 1.5 spacing, 1.25 cm indent, margins 30/15/20/20 mm, chapters on a new page, title page, table of contents, page numbers), **academic**, **modern**, **business**. When Word is installed it fills the table of contents with real page numbers. |
+| `slides_create` | 16:9 PPTX: themes *midnight, ocean, forest* (dark) and *clean, warm, mono* (light); layouts: title, section, bullets (+ photo or diagram), two columns, stats, quote, full-bleed photo, diagram / chart, table, timeline, closing; speaker notes. Optional PDF copy. |
+| `image_search` | Real photos and illustrations under free licences (Wikimedia Commons, Openverse): public domain / CC0 / CC BY / CC BY-SA only, downloaded right away, each with a ready credit line that goes into the figure caption or onto the slide. |
+| `diagram_create` | Diagrams and charts from Mermaid: flowcharts, sequences, timelines, mind maps, Gantt, pie, bar and line charts — in the document or deck theme colours, at 2× resolution. `doc_create` and `slides_create` also take the Mermaid code inline. |
+| `doc_read` | Reads DOCX, PDF, PPTX, XLSX, TXT, MD, CSV, HTML; DOCX paragraphs are numbered for edits. |
+| `doc_edit` | Edits an existing DOCX in place, keeping its formatting: replace text, rewrite a paragraph, insert paragraphs / headings / bullets, delete. A backup goes to `Documents\Jarvis\.backups`. PPTX: text replacement. |
+| `doc_convert` | Through the installed Word / PowerPoint / Excel (or LibreOffice): to PDF, PDF to editable DOCX, legacy .doc / .ppt / .xls to modern formats. Without Office, DOCX → PDF still works (simplified layout). |
+
+All generators work without Office; Office or LibreOffice is only needed for exact conversions and filling the table of contents.
+
 ## Speech recognition
 
 * **Russian → GigaAM v3** (punctuated CTC), **English → Parakeet-TDT 110M**; Silero VAD + a streaming recogniser gate the wake word.
@@ -227,7 +245,7 @@ Typical: ~0.9 GB across all processes with the agent loaded (~0.4 GB while it sl
 ## Privacy & safety
 
 * All speech recognition runs on your PC. No telemetry.
-* Network traffic: your chosen model endpoint, one-time model downloads (GitHub / Hugging Face), connectors you enable, update checks (GitHub), and — only with a cloud voice — the sentences Jarvis speaks (to the free voice server / Fish Audio). The free server sees the text and a random per-installation id, nothing else.
+* Network traffic: your chosen model endpoint, one-time model downloads (GitHub / Hugging Face), connectors you enable, update checks (GitHub), image searches for documents (the query text goes to Wikimedia Commons / Openverse), and — only with a cloud voice — the sentences Jarvis speaks (to the free voice server / Fish Audio). The free server sees the text and a random per-installation id, nothing else.
 * Risky shell patterns always ask; computer control is consent-gated per chat; connector writes ask first; **Ctrl+Alt+K** is a global kill switch.
 * Screenshots taken for vision are sent to the model you selected — pick a local/endpoint model if that matters.
 

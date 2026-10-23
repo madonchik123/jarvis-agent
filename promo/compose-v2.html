@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { --accent: #38d6ff; --text: #eef6ff; --hot: #ffcf4a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: #03060b; }
+  #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; color: var(--text); }
+  #bg { position: absolute; inset: 0;
+    background: radial-gradient(900px 700px at 85% 10%, rgba(56,214,255,.22), transparent 60%), radial-gradient(1000px 800px at 0% 95%, rgba(120,90,255,.20), transparent 60%), #03060b; }
+  #grid { position: absolute; inset: -110px; opacity: .3;
+    background-image: linear-gradient(rgba(120,190,255,.16) 2px, transparent 2px), linear-gradient(90deg, rgba(120,190,255,.16) 2px, transparent 2px);
+    background-size: 108px 108px; -webkit-mask-image: radial-gradient(ellipse at 50% 40%, #000 0%, transparent 72%); }
+  .abs { position: absolute; }
+  #head { left: 50px; right: 50px; top: 236px; height: 190px; display: flex; align-items: center; justify-content: center; text-align: center;
+    font-family: 'Bahnschrift', 'Segoe UI Variable Display', sans-serif; font-weight: 700; font-size: 84px; line-height: 1.0; text-transform: uppercase; letter-spacing: .01em;
+    text-shadow: 0 0 40px rgba(56,214,255,.5), 0 6px 26px rgba(0,0,0,.8); }
+  #head b { color: var(--accent); font-weight: 700; }
+  #cmd { left: 40px; top: 448px; height: 74px; display: flex; align-items: center; gap: 16px; padding: 0 30px 0 18px; border-radius: 40px;
+    background: rgba(10, 22, 36, .92); border: 2px solid rgba(56,214,255,.55); box-shadow: 0 0 50px -10px rgba(56,214,255,.7); font-size: 38px; font-weight: 600; white-space: nowrap; }
+  #cmd .mic { width: 50px; height: 50px; border-radius: 50%; background: var(--accent); display: grid; place-items: center; }
+  #cmd .mic svg { width: 28px; height: 28px; }
+  .pane { position: absolute; border-radius: 28px; overflow: hidden; background: #0a0f16;
+    border: 2px solid rgba(120,200,255,.35); box-shadow: 0 30px 90px -20px rgba(0,0,0,.85), 0 0 90px -20px rgba(56,214,255,.5); }
+  .pane img { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #speed { right: 58px; top: 556px; padding: 8px 20px; border-radius: 16px; background: rgba(255, 207, 74, .95); color: #1a1200; font-weight: 800; font-size: 36px; letter-spacing: .02em; }
+  #real { left: 60px; top: 1236px; padding: 6px 16px; border-radius: 12px; background: rgba(0,0,0,.6); font-size: 28px; font-weight: 600; display: flex; gap: 10px; align-items: center; }
+  #real i { width: 16px; height: 16px; border-radius: 50%; background: #ff4747; display: inline-block; box-shadow: 0 0 12px #ff4747; }
+  #pill { left: 82px; top: 1200px; width: 916px; height: 224px; border-radius: 30px; overflow: hidden; border: 2px solid rgba(120,200,255,.25); box-shadow: 0 0 60px -16px rgba(56,214,255,.5); }
+  #pill img { width: 916px; height: 224px; display: block; }
+  #sub { left: 40px; right: 150px; top: 1316px; height: 150px; display: flex; align-items: center; justify-content: center; text-align: center; }
+  #sub .w { display: inline-block; margin: 0 18px; font-family: 'Bahnschrift', 'Segoe UI', sans-serif; font-size: 80px; font-weight: 700; text-transform: uppercase; color: #fff;
+    -webkit-text-stroke: 3px #000; paint-order: stroke fill; text-shadow: 0 6px 0 #000, 0 0 30px rgba(0,0,0,.9); }
+  #sub .w.on { color: var(--hot); }
+  #flash { position: absolute; inset: 0; background: #c7efff; opacity: 0; mix-blend-mode: screen; }
+  #chips { left: 0; top: 0; width: 1080px; height: 1920px; }
+  .chip .e { font-family: 'Segoe UI Emoji'; margin-right: 12px; }
+  .chip { position: absolute; padding: 18px 30px; border-radius: 26px; font-size: 46px; font-weight: 700; background: rgba(10,22,36,.92);
+    border: 2px solid rgba(120,200,255,.45); box-shadow: 0 0 50px -10px rgba(56,214,255,.65); white-space: nowrap; }
+  #orbWrap { left: 190px; top: 560px; width: 700px; height: 700px; border-radius: 50%; overflow: hidden; -webkit-mask-image: radial-gradient(circle, #000 55%, transparent 70%); }
+  #orbWrap img { position: absolute; transform-origin: 0 0; }
+  #title { left: 0; right: 0; top: 450px; text-align: center; font-family: 'Bahnschrift', sans-serif; font-weight: 700; font-size: 180px; letter-spacing: .22em; padding-left: .22em;
+    color: #fff; text-shadow: 0 0 60px rgba(56,214,255,.9), 0 0 140px rgba(56,214,255,.5); }
+  #cta { left: 70px; right: 160px; top: 1010px; padding: 40px 36px; border-radius: 36px; text-align: center; background: linear-gradient(160deg, rgba(14,28,46,.95), rgba(8,16,28,.95));
+    border: 2px solid rgba(120,200,255,.4); box-shadow: 0 0 120px -20px rgba(56,214,255,.6); }
+  #cta h3 { margin: 0 0 16px; font-family: 'Bahnschrift', sans-serif; font-size: 56px; text-transform: uppercase; }
+  #cta .repo { font-size: 38px; color: var(--accent); font-weight: 700; }
+  #cta .btn { display: inline-block; margin-top: 26px; padding: 18px 40px; border-radius: 22px; background: var(--accent); color: #031018; font-size: 42px; font-weight: 800; box-shadow: 0 0 60px rgba(56,214,255,.7); }
+  #prog { left: 40px; right: 40px; top: 214px; height: 8px; display: flex; gap: 10px; }
+  #prog i { flex: 1; border-radius: 4px; background: rgba(255,255,255,.18); overflow: hidden; position: relative; }
+  #prog i b { position: absolute; inset: 0; background: var(--accent); transform-origin: 0 0; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div><div id="grid"></div>
+  <div class="abs" id="orbWrap"><img id="orbImg" /></div>
+  <div class="abs" id="panes"></div>
+  <div class="abs" id="speed"></div>
+  <div class="abs" id="real"><i></i>реальный экран</div>
+  <div class="abs" id="pill"><img id="pillImg" /></div>
+  <div class="abs" id="cmd"><div class="mic"><svg viewBox="0 0 24 24" fill="#031018"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2z"/></svg></div><span id="cmdText"></span></div>
+  <div class="abs" id="chips"></div>
+  <div class="abs" id="title">JARVIS</div>
+  <div class="abs" id="cta"><h3>Бесплатно · Open source</h3><div class="repo">github.com/madonchik123/jarvis-agent</div><div class="btn">Ссылка в профиле</div></div>
+  <div class="abs" id="prog"></div>
+  <div class="abs" id="head"></div>
+  <div class="abs" id="sub"></div>
+  <div id="flash"></div>
+</div>
+<script src="build/v2/data.js"></script>
+<script>
+  const D = window.PROMO2 // { total, lines, info, edit, orbFrames }
+  const ROOT = new URL('build/v2/', location.href).href
+  const OLD = new URL('build/clips/', location.href).href
+  const $ = (id) => document.getElementById(id)
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v))
+  const ease = (x) => 1 - Math.pow(1 - clamp(x), 3)
+  const easeIO = (x) => { x = clamp(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2 }
+  const L = D.lines
+  const cut = (i) => (i === 0 ? 0 : Math.max(0, L[i].start - 0.15))
+  const S = L.map((_, i) => ({ a: cut(i), b: i === L.length - 1 ? D.total : cut(i + 1) }))
+  const E = D.edit.scenes // per scene: { task, cmd, head, keys: [[localT, deskT], ...], zoom: [[localT, x, y, s]...] }
+
+  const setImg = async (img, url) => {
+    if (img.dataset.u === url) return
+    img.dataset.u = url
+    img.src = url
+    try { await img.decode() } catch (e) {}
+  }
+  const fr = (n) => String(n).padStart(5, '0') + '.jpg'
+  const lerpKeys = (keys, t) => {
+    if (t <= keys[0][0]) return keys[0].slice(1)
+    for (let i = 1; i < keys.length; i++) if (t <= keys[i][0]) {
+      const [t0, ...a] = keys[i - 1], [t1, ...b] = keys[i]
+      const k = (t - t0) / (t1 - t0 || 1)
+      return a.map((v, j) => v + (b[j] - v) * k)
+    }
+    return keys[keys.length - 1].slice(1)
+  }
+  // local time at which the desk clock reaches deskT
+  const lerpInv = (keys, d) => {
+    for (let i = 1; i < keys.length; i++) if (d <= keys[i][1]) return keys[i - 1][0] + ((d - keys[i - 1][1]) / (keys[i][1] - keys[i - 1][1] || 1)) * (keys[i][0] - keys[i - 1][0])
+    return keys[keys.length - 1][0]
+  }
+  const speedAt = (keys, t) => {
+    for (let i = 1; i < keys.length; i++) if (t <= keys[i][0]) return (keys[i][1] - keys[i - 1][1]) / (keys[i][0] - keys[i - 1][0] || 1)
+    return 1
+  }
+
+  // word-by-word captions: each line split into 2-3 word groups, words timed by length
+  const CAP = L.map((l) => {
+    const words = l.say.replace(/—/g, ' ').split(/\s+/).filter(Boolean)
+    const total = words.reduce((a, w) => a + w.length + 2, 0)
+    let acc = 0
+    const ws = words.map((w) => { const a = l.start + (acc / total) * l.dur; acc += w.length + 2; return { w, a, b: l.start + (acc / total) * l.dur } })
+    const groups = []
+    for (let i = 0; i < ws.length; ) {
+      const n = ws.length - i === 4 ? 2 : Math.min(3, ws[i].w.length > 8 ? 2 : 3)
+      groups.push(ws.slice(i, i + n))
+      i += n
+    }
+    return groups
+  })
+
+  // progress segments (one per scene) — a "series" feel that keeps people watching to the end
+  $('prog').innerHTML = S.map(() => '<i><b></b></i>').join('')
+
+  window.renderAt = async (t) => {
+    const jobs = []
+    const idx = Math.max(0, S.findIndex((s) => t >= s.a && t < s.b) === -1 ? S.length - 1 : S.findIndex((s) => t >= s.a && t < s.b))
+    const s = S[idx], local = t - s.a, len = s.b - s.a
+    const sc = E[idx]
+    $('grid').style.transform = `translateY(${(t * 26) % 108}px)`
+    ;[...$('prog').children].forEach((el, i) => (el.firstChild.style.transform = `scaleX(${i < idx ? 1 : i > idx ? 0 : clamp(local / len)})`))
+
+    // headline pops in each scene
+    const hv = ease(local / 0.3)
+    $('head').innerHTML = '<div>' + sc.head + '</div>'
+    $('head').style.opacity = clamp(Math.min(hv, (s.b - t) / 0.12))
+    $('head').style.transform = `scale(${0.86 + 0.14 * hv})`
+
+    const isTask = !!sc.task
+    for (const id of ['panes', 'speed', 'real', 'cmd']) $(id).style.display = isTask ? '' : 'none'
+    $('pill').style.display = 'none'
+    $('chips').style.display = sc.chips ? '' : 'none'
+    $('orbWrap').style.display = isTask ? 'none' : ''
+    $('title').style.display = sc.cta ? '' : 'none'
+    $('cta').style.display = sc.cta ? '' : 'none'
+
+    if (isTask) {
+      const I = D.info[sc.task]
+      const [deskT] = lerpKeys(sc.keys, local)
+      const P = $('panes')
+      if (P.dataset.scene !== String(idx)) {
+        P.dataset.scene = idx
+        P.innerHTML = sc.panes.map(() => '<div class="pane"><img /></div>').join('')
+      }
+      sc.panes.forEach((pn, k) => {
+        const box = P.children[k], img = box.firstChild
+        const src = I.desks[pn.kind]
+        Object.assign(box.style, { left: pn.x + 'px', top: pn.y + 'px', width: pn.w + 'px', height: pn.h + 'px' })
+        const fi = clamp(Math.round(deskT * I.fps) + 1, 1, src.frames)
+        jobs.push(setImg(img, ROOT + sc.task + '/desk_' + pn.kind + '/' + fr(fi)))
+        // camera: [t, cx, cy, scale] in source pixels; never shows outside the window crop
+        const [cx, cy, z] = pn.zoom ? lerpKeys(pn.zoom, local) : [src.w / 2, src.h / 2, 0]
+        const scale = Math.max(z, pn.w / src.w, pn.h / src.h)
+        let ox = pn.w / 2 - cx * scale, oy = pn.h / 2 - cy * scale
+        ox = Math.min(0, Math.max(pn.w - src.w * scale, ox))
+        oy = Math.min(0, Math.max(pn.h - src.h * scale, oy))
+        Object.assign(img.style, { width: src.w + 'px', height: src.h + 'px', transform: `translate(${ox}px, ${oy}px) scale(${scale})` })
+        // a pane appears (pop) once its app window exists in the recording
+        const born = Math.max(local - (pn.from != null ? lerpInv(sc.keys, pn.from) : 0), 0)
+        const bv = ease(Math.min(local / 0.35, born / 0.3)) * (pn.from != null && deskT < pn.from ? 0 : 1)
+        box.style.opacity = bv
+        box.style.transform = `translateY(${(1 - bv) * 50}px) scale(${0.94 + 0.06 * bv})`
+      })
+      const sp = speedAt(sc.keys, local)
+      $('speed').textContent = `▶▶ ×${Math.round(sp)}`
+      $('speed').style.opacity = sp > 1.5 ? ease(local / 0.35) : 0
+      const full = '«' + sc.cmd + '»'
+      $('cmdText').textContent = full.slice(0, Math.max(1, Math.round(clamp(local / 0.6) * full.length)))
+      $('cmd').style.opacity = ease(local / 0.2)
+    }
+
+    if (!isTask) {
+      // orb from the first promo capture (landscape app, idle → speaking states)
+      const n = D.orbFrames
+      const oi = Math.floor((t * 30) % n) + 1
+      jobs.push(setImg($('orbImg'), OLD + 'orb/' + fr(oi)))
+      Object.assign($('orbImg').style, { width: 1770 * 1.13 + 'px', left: -(440 * 1.13 - 350) + 'px', top: -(520 * 1.13 - 350) + 'px' })
+      $('orbWrap').style.transform = `scale(${1 + 0.06 * easeIO(local / len)})`
+      $('orbWrap').style.opacity = sc.cta ? 0.5 : 1
+    }
+
+    if (sc.chips) {
+      const C = $('chips')
+      if (!C.dataset.b) {
+        C.dataset.b = 1
+        C.innerHTML = sc.chips.map((c) => { const [e, ...r] = c[0].split(' '); return `<div class="chip" style="left:${c[1]}px;top:${c[2]}px"><span class="e">${e}</span>${r.join(' ')}</div>` }).join('')
+      }
+      ;[...C.children].forEach((el, i) => {
+        const p = ease((local - 0.15 - i * 0.32) / 0.3)
+        el.style.opacity = p
+        el.style.transform = `translateY(${(1 - p) * 40}px) scale(${0.8 + 0.2 * p})`
+      })
+    }
+    if (sc.cta) {
+      const p = ease((local - 0.2) / 0.5)
+      $('cta').style.opacity = p
+      $('cta').style.transform = `translateY(${(1 - p) * 50}px)`
+      $('title').style.opacity = ease(local / 0.4)
+    }
+
+    // captions
+    let html = ''
+    for (const g of CAP.flat ? CAP : []) for (const grp of g) if (t >= grp[0].a - 0.05 && t < grp[grp.length - 1].b + 0.12) {
+      html = grp.map((w) => `<span class="w${t >= w.a && t < w.b + 0.05 ? ' on' : ''}" style="transform:scale(${t >= w.a && t < w.a + 0.12 ? 1.06 : 1})">${w.w}</span>`).join(' ')
+    }
+    $('sub').innerHTML = html ? `<div>${html}</div>` : ''
+    $('sub').style.display = sc.cta ? 'none' : 'flex'
+
+    // cut flash; glitchy open for the hook
+    $('flash').style.opacity = clamp(1 - local / 0.2) * (idx === 0 ? 0 : 0.45)
+    if (t < 0.35) $('flash').style.opacity = Math.floor(t * 30) % 3 === 0 ? 0.4 : 0
+
+    await Promise.all(jobs)
+    return true
+  }
+</script>
+</body>
+</html>

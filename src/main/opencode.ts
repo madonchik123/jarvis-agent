@@ -491,6 +491,7 @@ export class Opencode extends EventEmitter {
       case 'session.status': {
         const t = p.status?.type
         if (t === 'busy' || t === 'retry') this.setBusy(true)
+        if (t === 'retry') this.onRetry(p.status)
         else if (t === 'idle') this.finishTurn()
         break
       }
@@ -547,6 +548,21 @@ export class Opencode extends EventEmitter {
 
   /** true when the last turn ended because the user stopped it (so nothing should auto-continue it) */
   aborted = false
+  private limitReported = false
+
+  /**
+   * The provider refused the request and opencode is retrying. Short retries are fine; a quota (free tier used up)
+   * or a retry minutes/hours away would leave Jarvis "working" in silence, so stop the turn and say why.
+   */
+  private onRetry(st: any) {
+    const wait = typeof st?.next === 'number' ? st.next - Date.now() : 0
+    const quota = st?.action?.reason === 'free_tier_limit' || /free usage|quota|limit (reached|exceeded)|insufficient (credit|balance)/i.test(String(st?.message ?? ''))
+    if (!quota && wait < 60_000) return
+    if (this.limitReported) return
+    this.limitReported = true
+    this.emit('limit', { message: String(st?.message ?? ''), waitMs: Math.max(0, wait), quota, free: st?.action?.reason === 'free_tier_limit' })
+    void this.abort().catch(() => {})
+  }
 
   private finishTurn() {
     if (!this.isBusy) return // session.status:idle and session.idle both arrive: end a turn only once
@@ -566,6 +582,7 @@ export class Opencode extends EventEmitter {
     this.armSleep()
     this.currentVia = via
     this.aborted = false
+    this.limitReported = false
     const [providerID, ...rest] = this.getSettings().model.split('/')
     const cur = this.threads.current
     if (cur) this.threads.touch(cur.id, text.replace(/\s+/g, ' ').slice(0, 48))

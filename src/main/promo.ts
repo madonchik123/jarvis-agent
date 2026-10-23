@@ -95,10 +95,98 @@ export async function runPromo(o: { win: () => BrowserWindow; assistant: Assista
       }
     })()
     await done
+    if (A.opencode.isBusy) await A.opencode.abort().catch(() => {}) // never let an over-time turn leak into the next scene
     running = false
     await approver
     await sleep(2600)
     stop(name, extra())
+  }
+
+  if (process.env.JARVIS_PROMO_SET === 'v2') return runV2()
+
+  // ---------------------------------------------------------------- v2: harder real tasks, desktop recorded in a fixed stage
+  async function runV2() {
+    // the transparent full-screen overlay records as solid black with gdigrab, so it stays off while filming
+    A.overlay.clear()
+    await A.overlay.setControl(false)
+    A.overlay.show = async () => {}
+    A.overlay.setControl = async () => {}
+    // where each app is placed the moment it appears (so the crop is stable); all inside the recorded stage
+    const STAGE = { x: 0, y: 0, w: 1440, h: 1032 }
+    const PLACE: Record<string, { x: number; y: number; w: number; h: number }> = {
+      paint: { x: 20, y: 10, w: 1160, h: 1000 },
+      calc: { x: 20, y: 10, w: 400, h: 620 },
+      notepad: { x: 440, y: 10, w: 980, h: 760 }
+    }
+    const kindOf = (w: any) => {
+      const s = `${w.title} ${w.process} ${w.app}`.toLowerCase()
+      if (/mspaint|paint/.test(s)) return 'paint'
+      if (/calculator|калькулятор/.test(s)) return 'calc'
+      if (/notepad|блокнот/.test(s)) return 'notepad'
+      return ''
+    }
+    const kill = async () => {
+      for (const im of ['CalculatorApp.exe', 'mspaint.exe', 'Notepad.exe'])
+        await new Promise<void>((r) => spawn('taskkill', ['/F', '/IM', im], { stdio: 'ignore' }).on('close', () => r()))
+      // Notepad restores unsaved tabs on next start; drop the demo text so the next scene starts clean
+      rmSync(join(process.env.LOCALAPPDATA || '', 'Packages', 'Microsoft.WindowsNotepad_8wekyb3d8bbwe', 'LocalState', 'TabState'), { recursive: true, force: true })
+      await sleep(1200)
+    }
+
+    async function task(name: string, prompt: string, maxMs: number) {
+      if (!want(name)) return
+      await kill()
+      await A.win.call('desktop', { action: 'show_desktop' }, 20000).catch(() => {})
+      await sleep(1500)
+      const raw = join(o.out, `${name}.mkv`)
+      const ff: ChildProcess = spawn(
+        'ffmpeg',
+        ['-y', '-f', 'gdigrab', '-framerate', '30', '-offset_x', String(STAGE.x), '-offset_y', String(STAGE.y), '-video_size', `${STAGE.w}x${STAGE.h}`, '-i', 'desktop', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-pix_fmt', 'yuv420p', raw],
+        { stdio: ['pipe', 'ignore', 'ignore'] }
+      )
+      const ffStart = Date.now()
+      await sleep(1500)
+      const rects: { t: number; kind: string; x: number; y: number; w: number; h: number; focused: boolean }[] = []
+      const placed = new Set<number>()
+      let polling = true
+      const poll = (async () => {
+        while (polling) {
+          try {
+            const ws = await A.win.call<any[]>('windows')
+            for (const w of ws) {
+              const k = kindOf(w)
+              if (!k || w.minimized) continue
+              const p = PLACE[k]
+              if (!placed.has(w.hwnd)) {
+                placed.add(w.hwnd)
+                await A.win.call('window_control', { hwnd: w.hwnd, action: 'restore' }).catch(() => {})
+                await A.win.call('window_control', { hwnd: w.hwnd, action: 'move', x: p.x, y: p.y }).catch(() => {})
+                await A.win.call('window_control', { hwnd: w.hwnd, action: 'resize', width: p.w, height: p.h }).catch(() => {})
+                continue
+              }
+              rects.push({ t: Date.now() - ffStart, kind: k, x: w.x - STAGE.x, y: w.y - STAGE.y, w: w.w, h: w.h, focused: !!w.focused })
+            }
+          } catch {}
+          await sleep(250)
+        }
+      })()
+      await chat(name, prompt, maxMs, () => ({ deskOffsetMs: t0 - ffStart }))
+      await sleep(1500)
+      polling = false
+      await poll
+      ff.stdin?.write('q')
+      await sleep(2500)
+      ff.kill()
+      writeFileSync(join(o.out, `${name}_rects.json`), JSON.stringify({ stage: STAGE, rects }))
+    }
+
+    await view(1080, 1920, 2, true)
+    await task('t_paint', 'Открой Paint и нарисуй смайлик: большой круг, два глаза и улыбку.', 600_000)
+    await task('t_calc', 'Посчитай в калькуляторе 1337 умножить на 42, а потом открой Блокнот и запиши туда результат.', 240_000)
+    await task('t_letter', 'Открой Блокнот и напечатай туда короткое заявление на отпуск на две недели с понедельника, от имени Тони Старка. Печатай прямо в окно, файл не сохраняй.', 240_000)
+    await kill()
+    await A.win.call('desktop', { action: 'restore_all' }, 20000).catch(() => {})
+    console.log('[promo] v2 done')
   }
 
   // ---------------------------------------------------------------- scene: orb states (landscape, for the hook)

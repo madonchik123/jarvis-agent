@@ -14,9 +14,9 @@ app.whenReady().then(async () => {
   const win = new BrowserWindow({ width: 540, height: 960, useContentSize: true, show: false, webPreferences: { offscreen: true, contextIsolation: false, webSecurity: false, backgroundThrottling: false } })
   win.setContentSize(1080, 1920) // off-screen windows may exceed the display; the constructor would clamp it
   win.webContents.setFrameRate(60)
-  await win.loadFile(join(here, 'compose.html'))
+  await win.loadFile(join(here, process.env.PROMO_HTML || 'compose.html'))
   await new Promise((r) => setTimeout(r, 800))
-  const total = await win.webContents.executeJavaScript('window.PROMO.total')
+  const total = await win.webContents.executeJavaScript('(window.PROMO2 || window.PROMO).total')
   const grab = async (t) => {
     await win.webContents.executeJavaScript(`window.renderAt(${t})`)
     await new Promise((r) => setTimeout(r, 40))
@@ -26,7 +26,7 @@ app.whenReady().then(async () => {
   }
 
   if (process.env.PROMO_STILLS) {
-    const dir = join(here, 'build', 'preview')
+    const dir = join(here, 'build', process.env.PROMO_PREVIEW || 'preview')
     mkdirSync(dir, { recursive: true })
     for (const s of process.env.PROMO_STILLS.split(',')) {
       writeFileSync(join(dir, `t${s}.jpg`), await grab(parseFloat(s)))
@@ -37,8 +37,8 @@ app.whenReady().then(async () => {
 
   const out = join(here, 'out')
   mkdirSync(out, { recursive: true })
-  const mp4 = join(out, 'jarvis-promo-tiktok.mp4')
-  const ff = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'image2pipe', '-framerate', String(FPS), '-vcodec', 'mjpeg', '-i', '-', '-i', join(here, 'build', 'audio.wav'),
+  const mp4 = join(out, process.env.PROMO_MP4 || 'jarvis-promo-tiktok.mp4')
+  const ff = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'image2pipe', '-framerate', String(FPS), '-vcodec', 'mjpeg', '-i', '-', '-i', join(here, 'build', process.env.PROMO_AUDIO || 'audio.wav'),
     '-c:v', 'libx264', '-preset', 'slow', '-crf', '17', '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level', '4.2', '-r', String(FPS), '-c:a', 'aac', '-b:a', '192k', '-ar', '44100', '-movflags', '+faststart', '-shortest', mp4], { stdio: ['pipe', 'inherit', 'inherit'] })
   const frames = Math.round(total * FPS)
   for (let i = 0; i < frames; i++) {

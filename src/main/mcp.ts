@@ -1049,6 +1049,238 @@ export class JarvisMcp {
       }
     )
 
+    // ---- documents: read / create / edit / convert office files (src/main/docs) -----------------------------------------
+    const block = z.object({
+      type: z.enum(['heading', 'paragraph', 'bullets', 'numbered', 'table', 'image', 'diagram', 'quote', 'pagebreak', 'references', 'note']),
+      text: z.string().optional().describe('heading / paragraph / quote / note text; **bold**, *italic*, `code` work inline'),
+      level: z.number().optional().describe('heading level 1-3 (1 = chapter)'),
+      items: z.array(z.string()).optional().describe('bullets / numbered / references items'),
+      header: z.array(z.string()).optional().describe('table header cells'),
+      rows: z.array(z.array(z.string())).optional().describe('table rows'),
+      caption: z.string().optional().describe('table / image caption (numbered automatically), or quote author'),
+      path: z.string().optional().describe('image: local file path (png/jpg)'),
+      width: z.number().optional().describe('image width in px (max 620)'),
+      mermaid: z.string().optional().describe('diagram: Mermaid source (flowchart, timeline, pie, xychart-beta …) rendered as a numbered figure'),
+      credit: z.string().optional().describe('image: the credit line from image_search (required for CC images)')
+    })
+    const docErr = (e: any) =>
+      err(String(e?.message || e).replace(/^Error: /, '') + (/EBUSY|EPERM|locked/i.test(String(e)) ? ' — the file is open in another program; close it or save to a new name (out)' : ''))
+    s.registerTool(
+      'doc_read',
+      {
+        description:
+          'Read a document: .docx .pdf .pptx .xlsx .txt .md .csv .html. DOCX paragraphs come numbered [#n] — the indexes doc_edit uses. Read before editing or when the user refers to a file ("my coursework", "this PDF").',
+        inputSchema: { path: z.string().describe('absolute path'), max_chars: z.number().optional().describe('default 40000') }
+      },
+      async (a) => {
+        try {
+          const { readDocument } = await import('./docs')
+          return text(await readDocument(a.path, a.max_chars ?? 40000))
+        } catch (e: any) {
+          return docErr(e)
+        }
+      }
+    )
+    s.registerTool(
+      'doc_create',
+      {
+        description:
+          'Create a finished, well-formatted document (DOCX for editing in Word, or PDF) from structured blocks: reports, coursework (курсовая), essays (реферат), letters, CVs, instructions. ' +
+          'Real Word styles: headings, numbered tables/figures with captions, lists, page numbers, table of contents, title page. ' +
+          'template: "gost" = Russian university rules (Times New Roman 14, 1.5 spacing, margins 30/15/20/20, chapters start on a new page, титульный лист via title_page); "academic"; "modern" (default); "business". ' +
+          'Write the FULL text yourself (no placeholders). Saved to Documents/Jarvis unless path is given; returns the path.',
+        inputSchema: {
+          format: z.enum(['docx', 'pdf']).optional().describe('default docx'),
+          title: z.string(),
+          subtitle: z.string().optional(),
+          author: z.string().optional(),
+          template: z.enum(['gost', 'academic', 'modern', 'business']).optional(),
+          title_page: z
+            .object({
+              organization: z.string().optional().describe('ministry / university, one line each (newline separated)'),
+              faculty: z.string().optional(),
+              department: z.string().optional(),
+              work_type: z.string().optional().describe('КУРСОВАЯ РАБОТА / РЕФЕРАТ / ОТЧЁТ ПО ПРАКТИКЕ …'),
+              discipline: z.string().optional(),
+              topic: z.string().optional(),
+              author: z.string().optional(),
+              group: z.string().optional(),
+              supervisor: z.string().optional(),
+              city: z.string().optional(),
+              year: z.string().optional()
+            })
+            .optional()
+            .describe('adds a cover / title page'),
+          toc: z.boolean().optional().describe('table of contents after the title page'),
+          page_numbers: z.boolean().optional().describe('default true'),
+          blocks: z.array(block),
+          path: z.string().optional().describe('file name or absolute path'),
+          overwrite: z.boolean().optional(),
+          open: z.boolean().optional().describe('open the result for the user')
+        }
+      },
+      async (a) => {
+        try {
+          const { createDocument } = await import('./docs')
+          return text(await createDocument(a as any, a.format ?? 'docx', { path: a.path, overwrite: a.overwrite, open: a.open }))
+        } catch (e: any) {
+          return docErr(e)
+        }
+      }
+    )
+    const col = z.object({ title: z.string().optional(), bullets: z.array(z.string()).optional() })
+    s.registerTool(
+      'slides_create',
+      {
+        description:
+          'Create a designed PowerPoint presentation (.pptx, 16:9). Layouts: title, section, bullets (max 6 short bullets, optional image path or diagram beside them), two_column (left/right), stats (2-4 {value,label}), quote, image (full-bleed photo + credit), diagram (Mermaid chart / scheme, large), table (header+rows), timeline (steps), closing. ' +
+          'Themes: midnight (dark, default), ocean, forest (dark); clean, warm, mono (light). Good decks: one idea per slide, short phrases not paragraphs, a section slide per part, numbers as stats, speaker notes with what to say. pdf:true also exports a PDF (needs PowerPoint or LibreOffice).',
+        inputSchema: {
+          title: z.string(),
+          subtitle: z.string().optional(),
+          author: z.string().optional(),
+          theme: z.enum(['midnight', 'clean', 'ocean', 'warm', 'forest', 'mono']).optional(),
+          slides: z.array(
+            z.object({
+              layout: z.enum(['title', 'section', 'bullets', 'two_column', 'image', 'diagram', 'quote', 'stats', 'table', 'timeline', 'closing']),
+              title: z.string().optional(),
+              subtitle: z.string().optional(),
+              bullets: z.array(z.string()).optional(),
+              left: col.optional(),
+              right: col.optional(),
+              image: z.string().optional().describe('local image path'),
+              quote: z.string().optional(),
+              author: z.string().optional(),
+              stats: z.array(z.object({ value: z.string(), label: z.string() })).optional(),
+              steps: z.array(z.object({ title: z.string(), text: z.string().optional() })).optional(),
+              header: z.array(z.string()).optional(),
+              rows: z.array(z.array(z.string())).optional(),
+              notes: z.string().optional().describe('speaker notes'),
+              diagram: z.string().optional().describe('Mermaid source: layout diagram shows it large; on a bullets slide it goes beside the bullets'),
+              caption: z.string().optional().describe('diagram caption'),
+              credit: z.string().optional().describe('credit line of an image from image_search')
+            })
+          ),
+          path: z.string().optional(),
+          overwrite: z.boolean().optional(),
+          open: z.boolean().optional(),
+          pdf: z.boolean().optional()
+        }
+      },
+      async (a) => {
+        try {
+          const { createDeck } = await import('./docs')
+          return text(await createDeck(a as any, { path: a.path, overwrite: a.overwrite, open: a.open, pdf: a.pdf }))
+        } catch (e: any) {
+          return docErr(e)
+        }
+      }
+    )
+    s.registerTool(
+      'doc_edit',
+      {
+        description:
+          'Edit an existing .docx in place, keeping its formatting (a backup copy is kept). Call doc_read first: indexes are its [#n] numbers, all relative to the file BEFORE this call, so send every change in one call. ' +
+          'ops: replace_text {find, replace, all?}; set_paragraph {index, text}; insert_after {index (-1 = top), blocks:[{type: paragraph|heading|bullet, text, level?}]}; delete {index, count?}. ' +
+          '.pptx supports replace_text only (rebuild decks with slides_create). out = save as a new file instead.',
+        inputSchema: {
+          path: z.string(),
+          ops: z.array(
+            z.object({
+              op: z.enum(['replace_text', 'set_paragraph', 'insert_after', 'delete']),
+              find: z.string().optional(),
+              replace: z.string().optional(),
+              all: z.boolean().optional(),
+              index: z.number().optional(),
+              count: z.number().optional(),
+              text: z.string().optional(),
+              blocks: z.array(z.object({ type: z.enum(['paragraph', 'heading', 'bullet']), text: z.string(), level: z.number().optional() })).optional()
+            })
+          ),
+          out: z.string().optional(),
+          open: z.boolean().optional()
+        }
+      },
+      async (a) => {
+        try {
+          const { editDocument } = await import('./docs')
+          return text(await editDocument(a.path, a.ops as any, { out: a.out, open: a.open }))
+        } catch (e: any) {
+          return docErr(e)
+        }
+      }
+    )
+    s.registerTool(
+      'image_search',
+      {
+        description:
+          'Find real photos / illustrations for documents and slides: searches Wikimedia Commons (+ Openverse), returns only free-licence images (public domain, CC0, CC BY, CC BY-SA), already downloaded. ' +
+          'Use short ENGLISH queries naming the concrete subject ("solar farm aerial", "Alan Turing", "Moscow Kremlin"). Pass a returned path as image (slides) or {type:"image", path, caption, credit} (documents) and ALWAYS pass its credit — the licences require attribution.',
+        inputSchema: {
+          query: z.string(),
+          count: z.number().optional().describe('1-8, default 4'),
+          orientation: z.enum(['landscape', 'portrait', 'square', 'any']).optional().describe('landscape for slides (default any)')
+        }
+      },
+      async (a) => {
+        try {
+          const { findImages } = await import('./docs')
+          const r = await findImages(a.query, a.count, a.orientation)
+          const lines = r.map((x, i) => `${i + 1}. ${x.path}\n   ${x.width}×${x.height} · ${x.title}${x.description ? ' — ' + x.description : ''}\n   credit: ${x.credit}`)
+          const content: any[] = [{ type: 'text', text: lines.join('\n') }]
+          // a vision model can look at small previews and pick the best one
+          if (h.isVision())
+            for (const x of r.slice(0, 4)) {
+              const img = nativeImage.createFromPath(x.path)
+              if (!img.isEmpty()) content.push({ type: 'image', data: img.resize({ width: 320 }).toJPEG(70).toString('base64'), mimeType: 'image/jpeg' })
+            }
+          return { content }
+        } catch (e: any) {
+          return docErr(e)
+        }
+      }
+    )
+    s.registerTool(
+      'diagram_create',
+      {
+        description:
+          'Render a diagram or chart from Mermaid code to a PNG (doc_create and slides_create can also take Mermaid directly: block {type:"diagram", mermaid, caption} / slide {layout:"diagram", diagram}). ' +
+          'Supports: flowchart (processes, architectures), sequenceDiagram, classDiagram, erDiagram, stateDiagram-v2, timeline, mindmap, gantt, quadrantChart, pie (shares), xychart-beta (bar/line with x-axis [..] and bar [..] / line [..]). ' +
+          'Quote labels with spaces or punctuation: A["Текст (пример)"]. theme: light (documents), gost (black & white), or a slide theme (midnight, ocean, forest, clean, warm, mono). On a syntax error, fix the code and retry once.',
+        inputSchema: {
+          mermaid: z.string(),
+          theme: z.enum(['light', 'gost', 'midnight', 'clean', 'ocean', 'warm', 'forest', 'mono']).optional(),
+          width: z.number().optional().describe('px, default 1200'),
+          path: z.string().optional().describe('where to save the PNG (default: Documents/Jarvis/.assets)')
+        }
+      },
+      async (a) => {
+        try {
+          const { makeDiagram } = await import('./docs')
+          const r = await makeDiagram(a.mermaid, a.theme ?? 'light', a.width, a.path)
+          return text(`saved ${r.path}${r.w ? ` (${r.w}×${r.h})` : ''}`)
+        } catch (e: any) {
+          return docErr(e)
+        }
+      }
+    )
+    s.registerTool(
+      'doc_convert',
+      {
+        description:
+          'Convert documents with the Office apps on this PC (Word / PowerPoint / Excel, else LibreOffice): to "pdf" (docx, doc, rtf, odt, pptx, ppt, xlsx), to "docx" (doc, rtf, odt, and PDF into editable Word), to "pptx" (ppt), to "xlsx" (xls, csv). Without Office, DOCX to PDF still works with a simplified layout.',
+        inputSchema: { path: z.string(), to: z.enum(['pdf', 'docx', 'pptx', 'xlsx']), out: z.string().optional(), open: z.boolean().optional() }
+      },
+      async (a) => {
+        try {
+          const { convertDocument } = await import('./docs')
+          return text(await convertDocument(a.path, a.to, { out: a.out, open: a.open }))
+        } catch (e: any) {
+          return docErr(e)
+        }
+      }
+    )
+
     s.registerTool(
       'wait',
       {

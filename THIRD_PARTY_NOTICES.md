@@ -22,6 +22,14 @@ Jarvis builds on the following open-source projects and models. Please respect t
 | [XTTS-v2](https://huggingface.co/coqui/XTTS-v2) (Coqui) | optional GPU voice cloning | **Coqui Public Model License — non-commercial use only** |
 | [Fish Audio](https://fish.audio) cloud TTS | optional cloud voices (own key, or through the shared free voice server) | service terms apply; text is sent to the service |
 | Windows OCR (`Windows.Media.Ocr`), UI Automation | on-screen text / controls | part of Windows |
+| [docx](https://github.com/dolanmiu/docx) | Word document generation | MIT |
+| [PptxGenJS](https://github.com/gitbrent/PptxGenJS) | PowerPoint generation | MIT |
+| [JSZip](https://github.com/Stuk/jszip) | reading / patching DOCX, PPTX, XLSX | MIT (dual MIT / GPL-3.0, used under MIT) |
+| [unpdf](https://github.com/unjs/unpdf) (bundles Mozilla [pdf.js](https://github.com/mozilla/pdf.js)) | PDF text extraction | MIT / Apache-2.0 |
+| [Mermaid](https://github.com/mermaid-js/mermaid) (browser bundle) | diagram and chart rendering | MIT |
+| [Wikimedia Commons](https://commons.wikimedia.org) / [Openverse](https://openverse.org) APIs | image search; only public-domain / CC0 / CC BY / CC BY-SA results are used, always with an attribution line | each image keeps its own licence |
+| Microsoft Visual C++ runtime (`msvcp140.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`) | shipped app-locally for Piper on PCs without the redistributable | Microsoft VC++ redistributable terms |
+| Microsoft Office / LibreOffice (if installed by the user) | optional exact conversions (PDF export, legacy formats) through their own automation interfaces | not distributed |
 
 ## Notes
 

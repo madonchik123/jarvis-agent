@@ -133,7 +133,7 @@ const pendingPerms = new Set<string>()
 
 function hudBounds(corner: Settings['hudCorner'], extra = 0) {
   const wa = screen.getPrimaryDisplay().workArea
-  const w = 440
+  const w = 520 // orb glow (~300 px) + the letter-spaced state label must fit, or the label is clipped
   const h = Math.min(wa.height - 40, 260 + extra)
   const m = 14
   const x = corner.endsWith('r') ? wa.x + wa.width - w - m : wa.x + m
@@ -588,6 +588,39 @@ app.whenReady().then(async () => {
       await new Promise((r) => setTimeout(r, 4000))
     }
     console.log('[feed] done')
+  }
+  if (process.env.JARVIS_TEST_DOCS) {
+    // dev / packaged self-test of the document toolkit: diagram, image search, deck, PDF, read back
+    const out = process.env.JARVIS_TEST_DOCS
+    const d = await import('./docs')
+    const step = async (name: string, f: () => Promise<unknown>) => {
+      try {
+        console.log(`[docs-test] ${name}: ${String(await f()).split('\n')[0]}`)
+      } catch (e: any) {
+        console.log(`[docs-test] ${name}: FAIL ${e?.message || e}`)
+      }
+    }
+    await step('diagram', async () => (await d.makeDiagram('flowchart LR\n  A["Голос"] --> B["Агент"] --> C["Документ"]', 'midnight', 1000, join(out, 'diagram.png'))).path)
+    let img = ''
+    await step('images', async () => ((img = (await d.findImages('Moscow Kremlin', 1, 'landscape'))[0].path), img))
+    await step('deck', () => d.createDeck({ title: 'Self-test', theme: 'clean', slides: [{ layout: 'title' }, { layout: 'diagram', title: 'Схема', diagram: 'pie title Доли\n  "A" : 60\n  "B" : 40' }, { layout: 'image', title: 'Фото', image: img }] }, { path: join(out, 'self-test.pptx'), overwrite: true }))
+    await step('pdf', () => d.createDocument({ title: 'Self-test', template: 'modern', blocks: [{ type: 'paragraph', text: 'PDF ok' }, { type: 'diagram', mermaid: 'flowchart TD\n  A --> B', caption: 'Схема' }] }, 'pdf', { path: join(out, 'self-test.pdf'), overwrite: true }))
+    await step('read pdf', () => d.readDocument(join(out, 'self-test.pdf'), 200))
+    await step('read pptx', () => d.readDocument(join(out, 'self-test.pptx'), 200))
+    console.log('[docs-test] done')
+  }
+  if (process.env.JARVIS_TEST_CMD) {
+    // dev: run typed commands through the real agent one after another ("cmd one;;cmd two") and log each turn's end
+    await new Promise((r) => setTimeout(r, 5000))
+    for (const cmd of process.env.JARVIS_TEST_CMD.split(';;')) {
+      const t0 = Date.now()
+      const done = new Promise<void>((r) => assistant.opencode.once('turnEnd', () => r()))
+      console.log('[cmd-test] >>>', cmd)
+      void assistant.handleCommand(cmd, 'text')
+      await Promise.race([done, new Promise((r) => setTimeout(r, 15 * 60_000))])
+      console.log(`[cmd-test] turn done in ${Math.round((Date.now() - t0) / 1000)} s`)
+    }
+    console.log('[cmd-test] all done')
   }
   if (process.env.JARVIS_TEST_SAY) {
     await new Promise((r) => setTimeout(r, 5000))

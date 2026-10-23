@@ -161,6 +161,22 @@ export class Assistant extends EventEmitter implements Hub {
       this.setState('error')
       setTimeout(() => this.state === 'error' && this.setState('idle'), 2500)
     })
+    this.opencode.on('limit', (l: { message: string; waitMs: number; quota: boolean; free: boolean }) => {
+      console.log('[agent] provider limit / long retry:', l.message, Math.round(l.waitMs / 1000) + 's')
+      const ru = this.lastLang === 'ru'
+      const hours = l.waitMs > 3_600_000 ? Math.round(l.waitMs / 3_600_000) : 0
+      const when = l.waitMs > 60_000 ? (ru ? (hours ? ` (снова доступна примерно через ${hours} ч)` : ` (снова доступна через ${Math.ceil(l.waitMs / 60_000)} мин)`) : hours ? ` (available again in about ${hours} h)` : ` (available again in ${Math.ceil(l.waitMs / 60_000)} min)`) : ''
+      const text = l.quota
+        ? ru
+          ? `${l.free ? 'Лимит бесплатной модели исчерпан' : 'У провайдера модели закончился лимит или кредиты'}${when}. Выберите другую модель или добавьте свой ключ: Настройки → ИИ-агент.`
+          : `${l.free ? "The free model's usage limit is used up" : "The model provider's limit or credit ran out"}${when}. Pick another model or add your own key: Settings → AI agent.`
+        : ru
+          ? `Модель сейчас не отвечает, сервер повторит попытку${when}. Можно выбрать другую модель в Настройки → ИИ-агент.`
+          : `The model isn't answering right now; the server will retry${when}. You can pick another model in Settings → AI agent.`
+      this.turnErrored = true
+      this.emit('chat', { id: uid(), kind: 'system', text: '⚠ ' + text + (l.message ? ` — ${l.message}` : ''), at: Date.now() } satisfies ChatItem)
+      void this.say(l.quota ? (ru ? 'Сэр, бесплатный лимит модели исчерпан. Выберите другую модель в настройках.' : 'Sir, the free model limit is used up. Please pick another model in Settings.') : ru ? 'Сэр, модель сейчас не отвечает.' : 'Sir, the model is not responding right now.')
+    })
     this.opencode.on('turnStart', () => {
       this.sayCalledThisTurn = false
       this.controlPrompt = null
@@ -957,6 +973,13 @@ export class Assistant extends EventEmitter implements Hub {
       hold_key: q('Удерживаю клавишу', 'Holding a key', clip(i.keys, 12)),
       scroll_at: ['Прокручиваю', 'Scrolling'],
       type: q('Печатаю', 'Typing', i.text ? `«${clip(i.text, 30)}»` : ''),
+      doc_read: q('Читаю документ', 'Reading the document', clip(String(i.path || '').split(/[\\/]/).pop(), 30)),
+      doc_create: q(i.format === 'pdf' ? 'Создаю PDF' : 'Создаю документ', i.format === 'pdf' ? 'Creating a PDF' : 'Creating a document', i.title ? `«${clip(i.title, 30)}»` : ''),
+      slides_create: q('Делаю презентацию', 'Building the presentation', i.title ? `«${clip(i.title, 30)}»` : ''),
+      doc_edit: q('Правлю документ', 'Editing the document', clip(String(i.path || '').split(/[\\/]/).pop(), 30)),
+      doc_convert: q('Конвертирую в', 'Converting to', String(i.to || '').toUpperCase()),
+      image_search: q('Ищу картинки', 'Finding images', i.query ? `«${clip(i.query, 30)}»` : ''),
+      diagram_create: ['Рисую схему', 'Drawing a diagram'],
       remember: ['Запоминаю', 'Remembering'],
       recall: ['Вспоминаю', 'Recalling'],
       forget: ['Забываю', 'Forgetting'],
