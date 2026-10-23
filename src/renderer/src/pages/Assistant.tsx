@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowUp, Check, ChevronDown, History, MessageSquarePlus, Pencil, Trash2, Eye, FileText, Globe, Keyboard, Loader2, Mic, MousePointer2, Plus, Search, Square, Terminal, Wrench, Volume2, X, Brain, Zap, Crosshair } from 'lucide-react'
-import type { ChatItem, ToolEvent } from '@shared/types'
+import type { AppStatus, ChatItem, ToolEvent } from '@shared/types'
 import { Orb } from '../components/Orb'
 import { Markdown } from '../components/Markdown'
 import { PermissionStack } from '../components/Overlays'
@@ -317,6 +317,36 @@ function ProcessDrawer({ onClose }: { onClose: () => void }) {
   )
 }
 
+/** "What Jarvis is doing right now": rolling step list with live spinner and elapsed time. */
+function LiveSteps({ status }: { status: AppStatus }) {
+  const [, tick] = useState(0)
+  const started = status.turnStartedAt
+  useEffect(() => {
+    if (!started) return
+    const id = setInterval(() => tick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [started])
+  const steps = status.steps
+  if (!steps?.length || !started) return null
+  const secs = Math.max(0, Math.round((Date.now() - started) / 1000))
+  return (
+    <div className="live-steps">
+      <div className="live-head">
+        <span>{secs}s</span>
+      </div>
+      <AnimatePresence initial={false}>
+        {steps.map((s) => (
+          <motion.div key={s.id} className={'live-step ' + s.status} initial={{ opacity: 0, x: -8 }} animate={{ opacity: s.status === 'done' ? 0.55 : 1, x: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}>
+            {s.status === 'run' ? <Loader2 size={13} className="spin" /> : s.status === 'done' ? <Check size={13} /> : <X size={13} />}
+            <span>{s.label}</span>
+            {s.ms ? <em>{(s.ms / 1000).toFixed(1)}s</em> : null}
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 export function AssistantPage() {
   const { t, locale } = useT()
   const chat = useApp((s) => s.chat)
@@ -374,9 +404,10 @@ export function AssistantPage() {
               </motion.span>
             </AnimatePresence>
           </div>
-          <div className="hint">{status.listeningForWake ? t('home.hint', { hotkey }) : ''}</div>
+          <LiveSteps status={status} />
+          <div className="hint">{status.listeningForWake && !status.steps?.length ? t('home.hint', { hotkey }) : ''}</div>
           <div className="chips">
-            <span className={'chip ' + (status.opencode === 'ready' ? 'ok' : status.opencode === 'error' ? 'bad' : 'warn')}>
+            <span className={'chip ' + (status.opencode === 'ready' || status.opencode === 'sleeping' ? 'ok' : status.opencode === 'error' ? 'bad' : 'warn')}>
               <i className="dot" />
               agent · {settings.model.split('/')[1]}
             </span>

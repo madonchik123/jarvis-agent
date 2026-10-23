@@ -28,8 +28,18 @@ export interface Settings {
   cwd: string
   followupSeconds: number
   autoNewThreadMinutes: number
+  /** unload the agent server after this many idle minutes (0 = keep it running) */
+  agentIdleMinutes: number
+  /** ask = tell me and let me download, auto = download in the background, off = never check */
+  autoUpdate: 'ask' | 'auto' | 'off'
   visionModel: string
   cloneOffered: boolean
+  /** where the Jarvis voice comes from: the free shared server, your own Fish Audio key, or local engines (Piper / clone) */
+  voiceMode: 'server' | 'custom' | 'local'
+  ttsServerUrl: string
+  /** anonymous id of this installation (free voice server rate limits) */
+  installId: string
+  voiceModeSet: boolean
   fishApiKey: string
   fishModel: string
   fishVoiceRu: string
@@ -57,8 +67,8 @@ export const DEFAULT_SETTINGS: Settings = {
   sttModel: 'parakeet-en',
   sttLanguage: 'auto',
   voiceEnabled: true,
-  voiceRu: 'ru_RU-denis-medium',
-  voiceEn: 'jarvis-high',
+  voiceRu: 'fish:ru',
+  voiceEn: 'fish:en',
   voiceSpeed: 1,
   voiceVolume: 0.9,
   voiceFx: true,
@@ -73,8 +83,14 @@ export const DEFAULT_SETTINGS: Settings = {
   cwd: '',
   followupSeconds: 7,
   autoNewThreadMinutes: 45,
+  agentIdleMinutes: 10,
+  autoUpdate: 'ask',
   visionModel: 'auto',
   cloneOffered: false,
+  voiceMode: 'server',
+  ttsServerUrl: 'https://jarvis-tts-jade.vercel.app',
+  installId: '',
+  voiceModeSet: false,
   fishApiKey: '',
   fishModel: 's2.1-pro-free',
   // public Jarvis voice ids on Fish Audio (not secrets) — shipped as defaults
@@ -102,6 +118,17 @@ export interface Thread {
 export interface ThreadState {
   threads: Thread[]
   currentId: string
+}
+
+export interface UpdateState {
+  status: 'idle' | 'checking' | 'uptodate' | 'available' | 'downloading' | 'downloaded' | 'error' | 'unsupported'
+  current: string
+  version?: string
+  notes?: string
+  percent?: number
+  bytesPerSecond?: number
+  checkedAt?: number
+  error?: string
 }
 
 export interface ConnectorConfig {
@@ -180,14 +207,21 @@ export interface Routine {
   updatedAt: number
 }
 
-export type RoutineStep =
+/** `after`: pause in ms after the step (input delay) */
+export type RoutineStep = (
   | { type: 'say'; text: string }
   | { type: 'open'; target: string } // app / url / file
   | { type: 'run'; command: string } // powershell command
-  | { type: 'keys'; keys: string } // e.g. "ctrl+shift+t"
-  | { type: 'type'; text: string }
+  | { type: 'keys'; keys: string; scan?: boolean } // e.g. "ctrl+shift+t", "ctrl+a delete"
+  | { type: 'type'; text: string; charDelay?: number }
   | { type: 'wait'; ms: number }
+  | { type: 'click'; text?: string; x?: number; y?: number; button?: 'left' | 'right' | 'middle'; count?: number } // visible text or screen point
+  | { type: 'move'; x: number; y: number }
+  | { type: 'scroll'; direction: 'up' | 'down' | 'left' | 'right'; amount: number; x?: number; y?: number }
+  | { type: 'hold'; keys: string; ms: number; scan?: boolean }
+  | { type: 'focus'; target: string } // window title / app name
   | { type: 'agent'; prompt: string } // free-form task handled by the agent
+) & { after?: number }
 
 export interface MemoryItem {
   id: string
@@ -226,12 +260,15 @@ export interface SetupProgress {
 
 export interface AppStatus {
   state: AssistantState
-  opencode: 'starting' | 'ready' | 'error' | 'stopped'
+  opencode: 'starting' | 'ready' | 'error' | 'stopped' | 'sleeping'
   speech: 'loading' | 'ready' | 'error' | 'missing-models'
   tts: 'ready' | 'missing-voice' | 'error'
   listeningForWake: boolean
   message?: string
   activity?: string
+  /** the last steps of the running task (newest last) and when the task started */
+  steps?: { id: string; label: string; status: 'run' | 'done' | 'fail'; ms?: number }[]
+  turnStartedAt?: number
   controlling?: boolean
   clone?: 'off' | 'starting' | 'ready' | 'error'
 }

@@ -7,7 +7,9 @@ Jarvis builds on the following open-source projects and models. Please respect t
 | [Electron](https://www.electronjs.org/) | desktop shell | MIT |
 | React, Framer Motion, Zustand, lucide-react | UI | MIT / ISC |
 | [opencode](https://opencode.ai) | agent harness (`opencode serve`) | MIT |
-| [Open Computer Use](https://github.com/iFurySt/open-computer-use) | Codex-style accessibility computer use (`ocu mcp`) and its skill | MIT |
+| `jarvis-native` (this repo, `native/`) | C# computer-use engine; its window-centric tool design follows the publicly documented Codex computer-use API surface (no OpenAI code is included) | MIT (this project) |
+| [Microsoft.Windows.SDK.Contracts](https://www.nuget.org/packages/Microsoft.Windows.SDK.Contracts) | Windows OCR from .NET Framework (build time) | Microsoft software licence |
+| [electron-updater](https://www.electron.build/auto-update) | auto-update from GitHub Releases | MIT |
 | [Model Context Protocol SDK](https://github.com/modelcontextprotocol/typescript-sdk) | tool server / client | MIT |
 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) + ONNX Runtime | on-device VAD / ASR runtime | Apache-2.0 / MIT |
 | [Silero VAD](https://github.com/snakers4/silero-vad) | voice activity detection | MIT |
@@ -18,7 +20,7 @@ Jarvis builds on the following open-source projects and models. Please respect t
 | [Piper](https://github.com/rhasspy/piper) + `ru_RU` voices | fast text-to-speech | MIT |
 | `jgkawell/jarvis` Piper voice | community English "Jarvis" voice | MIT (as published by the author) |
 | [XTTS-v2](https://huggingface.co/coqui/XTTS-v2) (Coqui) | optional GPU voice cloning | **Coqui Public Model License — non-commercial use only** |
-| [Fish Audio](https://fish.audio) cloud TTS | optional cloud voices (user-supplied API key) | service terms apply; text is sent to the service |
+| [Fish Audio](https://fish.audio) cloud TTS | optional cloud voices (own key, or through the shared free voice server) | service terms apply; text is sent to the service |
 | Windows OCR (`Windows.Media.Ocr`), UI Automation | on-screen text / controls | part of Windows |
 
 ## Notes

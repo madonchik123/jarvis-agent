@@ -3,40 +3,19 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Edit3, Mic, Play, Plus, Trash2, X } from 'lucide-react'
 import type { Routine, RoutineStep } from '@shared/types'
 import { api, IPC } from '../api'
+import { STEP_TYPES, STEP_HINT, parseStep, stepText } from '@shared/routine-steps'
 import { useApp, useT } from '../store'
 
-const STEP_TYPES: RoutineStep['type'][] = ['say', 'open', 'run', 'keys', 'type', 'wait', 'agent']
-
-const stepText = (s: RoutineStep): string => {
-  switch (s.type) {
-    case 'say': return s.text
-    case 'open': return s.target
-    case 'run': return s.command
-    case 'keys': return s.keys
-    case 'type': return s.text
-    case 'wait': return `${s.ms} ms`
-    case 'agent': return s.prompt
-  }
-}
-const withText = (s: RoutineStep, v: string): RoutineStep => {
-  switch (s.type) {
-    case 'say': return { type: 'say', text: v }
-    case 'open': return { type: 'open', target: v }
-    case 'run': return { type: 'run', command: v }
-    case 'keys': return { type: 'keys', keys: v }
-    case 'type': return { type: 'type', text: v }
-    case 'wait': return { type: 'wait', ms: Number(v) || 500 }
-    case 'agent': return { type: 'agent', prompt: v }
-  }
-}
-const blank = (type: RoutineStep['type']): RoutineStep => withText({ type } as RoutineStep, type === 'wait' ? '500' : '')
+const blank = (type: RoutineStep['type']): RoutineStep => parseStep(type, type === 'wait' ? '500' : '')
 
 function Editor({ initial, onClose }: { initial: Partial<Routine>; onClose: () => void }) {
-  const { t } = useT()
+  const { t, locale } = useT()
   const [name, setName] = useState(initial.name ?? '')
   const [phrases, setPhrases] = useState<string[]>(initial.phrases ?? [])
   const [draft, setDraft] = useState('')
   const [steps, setSteps] = useState<RoutineStep[]>(initial.steps ?? [blank('say')])
+  // raw text while typing ("640,3" must not be normalised mid-edit)
+  const [drafts, setDrafts] = useState<Record<number, string>>({})
   const addPhrase = () => {
     const p = draft.trim()
     if (p && !phrases.includes(p)) setPhrases([...phrases, p])
@@ -71,10 +50,33 @@ function Editor({ initial, onClose }: { initial: Partial<Routine>; onClose: () =
           <div className="step-edit" key={i}>
             <select className="select" value={s.type} onChange={(e) => setSteps(steps.map((x, j) => (j === i ? blank(e.target.value as RoutineStep['type']) : x)))}>
               {STEP_TYPES.map((x) => (
-                <option key={x}>{x}</option>
+                <option key={x} value={x}>
+                  {t('step.' + x)}
+                </option>
               ))}
             </select>
-            <input className="input" value={stepText(s)} onChange={(e) => setSteps(steps.map((x, j) => (j === i ? withText(x, e.target.value) : x)))} />
+            <input
+              className="input"
+              placeholder={STEP_HINT[s.type][locale === 'ru' ? 0 : 1]}
+              value={drafts[i] ?? stepText(s)}
+              onChange={(e) => {
+                setDrafts({ ...drafts, [i]: e.target.value })
+                setSteps(steps.map((x, j) => (j === i ? parseStep(x.type, e.target.value, x.after) : x)))
+              }}
+            />
+            <input
+              className="input after"
+              type="number"
+              min={0}
+              step={50}
+              title={t('routines.afterHint')}
+              placeholder={t('routines.after')}
+              value={s.after ?? ''}
+              onChange={(e) => setSteps(steps.map((x, j) => (j === i ? { ...x, after: Number(e.target.value) || undefined } : x)))}
+            />
+            <button className="icon-btn" title="↑" disabled={i === 0} onClick={() => setSteps(steps.map((x, j) => (j === i - 1 ? steps[i] : j === i ? steps[i - 1] : x)))}>
+              ↑
+            </button>
             <button className="icon-btn" onClick={() => setSteps(steps.filter((_, j) => j !== i))}>
               <X size={16} />
             </button>
@@ -136,8 +138,11 @@ export function RoutinesPage() {
                   <div className="steps">
                     {r.steps.map((s, i) => (
                       <div className="step" key={i}>
-                        <b>{s.type}</b>
-                        <span>{stepText(s)}</span>
+                        <b>{t('step.' + s.type)}</b>
+                        <span>
+                          {stepText(s)}
+                          {s.after ? ` · ${s.after} ms` : ''}
+                        </span>
                       </div>
                     ))}
                   </div>

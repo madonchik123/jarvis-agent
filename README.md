@@ -1,226 +1,253 @@
-﻿# Jarvis — a free, open-source voice AI agent for Windows
+﻿# Jarvis — бесплатный голосовой ИИ-агент для Windows с открытым кодом
 
-An always-on desktop assistant in the spirit of the MCU J.A.R.V.I.S. Say **«Джарвис»** / **"Jarvis"** and it listens, thinks with a real
-coding-grade **agent** ([opencode](https://opencode.ai)), talks back in a Jarvis voice, **sees your screen and drives any Windows
-app** (Codex-style computer use), points at things while it speaks, remembers you, learns voice commands, and plugs into
-**Gmail / Calendar / Notion / GitHub / …** through MCP connectors.
+🇷🇺 Русский · 🇬🇧 [English version](README.en.md)
 
-* **Free to run**: speech recognition is fully on-device, and the agent works with opencode's free models (no key needed).
-* **Bilingual**: Russian + English everywhere (recognition, voice, UI).
-* **Light**: heavy parts load on demand and unload when idle (~250 MB for Jarvis itself, ~1 GB total across all processes).
-* **Yours**: MIT licence, no telemetry, bring any model/provider.
+Настольный ассистент в духе Джарвиса из фильмов Marvel. Скажите **«Джарвис»** / **"Jarvis"** — и он слушает, думает с помощью настоящего
+**агента** ([opencode](https://opencode.ai)), отвечает голосом Джарвиса, **видит ваш экран и управляет любым приложением Windows**
+(computer use в стиле Codex), показывает на экране то, о чём говорит, помнит вас, учит голосовые команды и подключается к
+**Gmail / Календарю / Notion / GitHub / …** через MCP-коннекторы.
+
+* **Бесплатно**: распознавание речи полностью на вашем ПК, агент работает на бесплатных моделях opencode (ключ не нужен), голос Джарвиса тоже бесплатный.
+* **Два языка**: русский и английский везде (распознавание, голос, интерфейс).
+* **Лёгкий**: тяжёлые части загружаются по требованию и выгружаются при простое (~0,9 ГБ на все процессы с загруженным агентом, ~0,4 ГБ пока он спит).
+* **Ваш**: лицензия MIT, без телеметрии, любая модель и провайдер, автообновление из GitHub Releases.
 
 ```
 Electron 45 · React 19 · TypeScript · Framer Motion
-sherpa-onnx (Silero VAD · streaming RU gate · GigaAM-RU · Parakeet-EN)  ·  Fish Audio / Piper / optional XTTS-v2 clone
-opencode serve (agent)  ·  MCP tools  ·  Open Computer Use (accessibility)  ·  Windows OCR + vision
+sherpa-onnx (Silero VAD · потоковый RU-гейт · GigaAM-RU · Parakeet-EN)  ·  бесплатный сервер голоса / Fish Audio / Piper / XTTS-v2
+opencode serve (агент)  ·  MCP-инструменты и коннекторы  ·  jarvis-native (C#: UI Automation · SendInput · OCR)  ·  модель-зрение
 ```
 
-> Unofficial fan project. "J.A.R.V.I.S." is a Marvel character name; this project is not affiliated with Marvel or Disney.
+> Неофициальный фанатский проект. «J.A.R.V.I.S.» — имя персонажа Marvel; проект не связан с Marvel и Disney.
 
 ---
 
-## Contents
+## Содержание
 
-1. [What it can do](#what-it-can-do)
-2. [Requirements](#requirements)
-3. [Install](#install)
-4. [First run](#first-run)
-5. [Using Jarvis](#using-jarvis)
-6. [Settings guide](#settings-guide)
-7. [AI providers & models](#ai-providers--models)
-8. [Voices](#voices)
-9. [Connectors (Gmail, Calendar, Notion, GitHub…)](#connectors-gmail-calendar-notion-github)
-10. [Computer use](#computer-use)
-11. [Voice commands (routines) and memory](#voice-commands-routines-and-memory)
-12. [Resource use](#resource-use)
-13. [Troubleshooting](#troubleshooting)
-14. [Privacy & safety](#privacy--safety)
-15. [Development](#development)
-16. [Licence](#licence)
+1. [Что умеет](#что-умеет)
+2. [Требования](#требования)
+3. [Установка](#установка)
+4. [Первый запуск](#первый-запуск)
+5. [Как пользоваться](#как-пользоваться)
+6. [Настройки](#настройки)
+7. [ИИ-провайдеры и модели](#ии-провайдеры-и-модели)
+8. [Голоса](#голоса)
+9. [Коннекторы (Gmail, Календарь, Notion, GitHub…)](#коннекторы-gmail-календарь-notion-github)
+10. [Управление компьютером и системой](#управление-компьютером-и-системой)
+11. [Распознавание речи](#распознавание-речи)
+12. [Голосовые команды и память](#голосовые-команды-и-память)
+13. [Обновления](#обновления)
+14. [Потребление ресурсов](#потребление-ресурсов)
+15. [Если что-то не работает](#если-что-то-не-работает)
+16. [Приватность и безопасность](#приватность-и-безопасность)
+17. [Разработка](#разработка)
+18. [Лицензия](#лицензия)
 
 ---
 
-## What it can do
+## Что умеет
 
 | | |
 |---|---|
-| **Wake word, always on** | Silero VAD gates a tiny streaming recogniser; GigaAM-RU verifies. Any phrase works (Settings), no training, no key. Confirms with a spoken «Да, сэр» / "Yes, sir?". Hotkey **Ctrl+Alt+J** works too. |
-| **Fast local speech recognition** | Russian → GigaAM v3, English → Parakeet-TDT 110M (or Whisper). Quiet-mic gain normalisation, two-recogniser wake verification, energy-based end-of-speech so it never gets stuck "listening". |
-| **A real agent** | opencode with a custom `jarvis` agent: shell, files, web, MCP tools, permission levels (ask / auto-confirm-risky / full). Works with free models out of the box; 230+ providers via your own key. |
-| **Computer use in any app** | Accessibility-tree control through **Open Computer Use** (click, set_value, type, press_key, scroll, drag…) plus pixel-level fallbacks for apps with no accessibility (Telegram, Discord, games): OCR screen map, `click_text`, `type`, wheel scroll, mouse, held keys and timed **key/mouse sequences**. A vision model can read icons and images. |
-| **Highlight while speaking** | `jarvis_say(highlight=[{find:"Settings"}])` outlines the thing on every monitor while the sentence is spoken. |
-| **Follow-up questions** | The agent can *ask* you something; the mic opens immediately and you can answer by voice, or tap/type the answer on the HUD or in the chat. |
-| **Spoken output = the gist** | The model chooses a short spoken line; the full answer stays on screen (collapsed), with a *Thinking* pill and a **Process** drawer (reasoning + timed tool steps). |
-| **Voices** | **Fish Audio** cloud Jarvis voices (RU + EN), local **Piper**, or an optional locally fine-tuned **XTTS-v2** clone (GPU). Automatic fallback chain to Piper. |
-| **Connectors (MCP)** | One-click catalogue: Gmail, Google Calendar/Drive/Docs/Sheets, Notion, Linear, GitHub, Context7, DeepWiki, Brave, Playwright, Filesystem… or any custom MCP server. Reading is free, writing asks first. |
-| **Memory & chats** | Durable facts injected every turn (editable page); chat threads with auto-new-chat after idle; «новый диалог» by voice. |
-| **Voice-editable commands** | “Jarvis, create a command *Hello*: open Spotify and say good morning” — runs instantly without the model; edit/delete by voice. |
-| **Status that means something** | While working the HUD shows what it is actually doing (“Opening roblox.com… · step 3”), not just a spinner. |
-| **Safety** | Consent once per chat for computer control, glowing screen edge + badge while controlling, **Ctrl+Alt+K** kill switch, loop guard, true cancellation. |
+| **Слово-активатор, всегда включено** | Silero VAD открывает крошечный потоковый распознаватель, GigaAM-RU подтверждает. Подойдёт любая фраза (в настройках), без обучения и ключей. Подтверждает голосом «Да, сэр» / "Yes, sir?". Работает и горячая клавиша **Ctrl+Alt+J**. |
+| **Быстрое локальное распознавание речи** | Русский → GigaAM v3, английский → Parakeet-TDT 110M (или Whisper). Нормализация тихого микрофона, проверка слова-активатора двумя распознавателями, адаптивный конец фразы, диктовка длиннее минуты. |
+| **Настоящий агент с характером** | opencode с собственным агентом `jarvis`: shell, файлы, интернет, MCP-инструменты, уровни разрешений (спрашивать / подтверждать рискованное / полная автономия). Характер — тот самый Джарвис: спокойный, точный, сухой юмор, «сэр». Бесплатные модели работают из коробки; 230+ провайдеров по вашему ключу. |
+| **Управление любым приложением** | Родной **C#-движок** (`jarvis-native.exe`) по образцу документированного window-API Codex computer use: окна по id, **индексированное дерево доступности** и скриншот окна, который работает даже когда оно перекрыто (`get_app_state`), затем `click` / `set_value` / `type_text` / `press_key` / `scroll` / `drag` / `paste` / `perform_secondary_action` — каждое действие активирует окно, ждёт, пока интерфейс «успокоится», и возвращает обновлённое дерево. Для приложений без доступности (Telegram, Discord, игры): карта экрана по OCR, `click_text`, `type`, колесо мыши, мышь, зажатие клавиш и **последовательности действий с задержками**. Модель-зрение читает иконки и картинки. |
+| **Управление системой** | Мгновенные команды без модели («громче», «пауза», «следующий трек», «сверни все окна», «громкость 40») и инструменты агента: общая и **поприложенческая громкость**, медиаклавиши, **окна** (перемещение, размер, привязка к краям, свернуть, закрыть, поверх всех), рабочий стол, блокировка, яркость. |
+| **Подсветка во время речи** | `jarvis_say(highlight=[{find:"Настройки"}])` обводит нужное на всех мониторах, пока звучит фраза. |
+| **Уточняющие вопросы** | Агент может *спросить* вас: микрофон открывается сразу, отвечать можно голосом, нажатием или текстом в HUD или в чате. |
+| **Говорит суть** | Модель выбирает короткую фразу для озвучки; полный ответ остаётся на экране (свёрнутым), есть плашка *Думает* и панель **Процесс** (рассуждения и шаги с таймингом). |
+| **Живая активность** | Список шагов с таймером показывает, что Джарвис делает прямо сейчас («Нажимаю элемент 34 в Калькуляторе… · шаг 6»), а не просто крутит спиннер. |
+| **Голоса** | **Сервер (бесплатно)** — голос Джарвиса с общего сервера, ничего настраивать не нужно; **Свой ключ** — ваш ключ Fish Audio; **Локально** — Piper или (по желанию) обученный клон XTTS на GPU. Автоматический откат на Piper. |
+| **Коннекторы (MCP)** | Каталог в один клик: Gmail, Google Календарь/Диск/Документы/Таблицы, Notion, Linear, GitHub, Context7, DeepWiki, Brave, Playwright, Filesystem… или любой свой MCP-сервер. Чтение свободно, запись — с подтверждением. |
+| **Память и чаты** | Постоянные факты в каждом запросе (редактируются на отдельной странице); потоки чатов с автоматическим новым чатом после паузы; «новый диалог» голосом. |
+| **Голосовые команды** | «Джарвис, создай команду *Привет*: открой Spotify и скажи доброе утро» — выполняется мгновенно, без модели. Шаги: сказать, открыть, перейти в окно, **клик** (по тексту или x,y; правый / двойной), ввод (с задержкой между символами), клавиши, **зажать клавишу**, **прокрутка**, мышь, ждать, PowerShell, задача Джарвису — у каждого шага можно задать **паузу после**. Редактируются на странице «Команды» или голосом. |
+| **Безопасность** | Согласие на управление ПК один раз на чат, светящаяся рамка экрана и значок во время управления, аварийная остановка **Ctrl+Alt+K**, защита от зацикливания, настоящая отмена. |
+| **Автообновление** | Установленное приложение проверяет GitHub Releases, сообщает о новой версии и ставит её по вашему согласию (или автоматически). |
 
-## Requirements
+## Требования
 
-* **Windows 10/11 x64.** macOS and Linux are **not supported yet**: computer use, OCR, window control and the Open Computer Use backend rely on Windows APIs (UI Automation / Windows OCR / SendInput), so there are no installers for those systems. A port is possible but is a separate piece of work — contributions welcome.
-* A microphone. ~1 GB free RAM, ~1 GB disk (speech models are downloaded on first run, ~350 MB core).
-* For development: **Node.js 22+** and Git.
-* Optional: **uv** (<https://docs.astral.sh/uv>) or **Node.js** on your PATH for some connectors that run locally; an NVIDIA GPU (≥6 GB VRAM) only for the XTTS clone.
-* For voice in Russian OCR on screen: add the Russian language pack in Windows (Settings → Time & language).
+* **Windows 10/11 x64.** macOS и Linux **пока не поддерживаются**: управление компьютером, OCR, окна и звук опираются на API Windows (UI Automation / Windows OCR / SendInput / Core Audio), поэтому установщиков для этих систем нет. Порт возможен, но это отдельная большая работа — вклад приветствуется.
+* Микрофон. ~1 ГБ свободной ОЗУ, ~1 ГБ на диске (речевые модели скачиваются при первом запуске, ~350 МБ основных).
+* Для разработки: **Node.js 22+**, Git и **.NET SDK 8+** (им собирается нативный помощник; установленному приложению нужен лишь .NET Framework 4.8, который уже есть в Windows).
+* По желанию: **uv** (<https://docs.astral.sh/uv>) или **Node.js** в PATH — для локальных коннекторов; видеокарта NVIDIA (≥ 6 ГБ VRAM) — только для клона XTTS.
+* Чтобы читать русский текст на экране (OCR), добавьте русский языковой пакет Windows (Параметры → Время и язык).
 
-## Install
+## Установка
 
-### Option A — installer
-Download `Jarvis Setup x.y.z.exe` from the repository's **Releases** (or the latest CI run's artifact) and run it. The installer is unsigned, so Windows SmartScreen may warn: *More info → Run anyway*.
+### Вариант А — установщик
+Скачайте `Jarvis-Setup-x.y.z.exe` в разделе **[Releases](https://github.com/madonchik123/jarvis-agent/releases)** репозитория и запустите. Установщик не подписан, поэтому SmartScreen может предупредить: *Подробнее → Выполнить в любом случае*. Дальше приложение обновляется само.
 
-### Option B — from source
+### Вариант Б — из исходников
 ```bash
 git clone https://github.com/madonchik123/jarvis-agent.git
 cd jarvis-agent
 npm install
-npm run models     # core speech models (~350 MB) into %APPDATA%\Jarvis\models  (or let the in-app first-run setup do it)
-npm run dev        # run in development
+npm run native     # собирает resources/native/jarvis-native.exe (C#)
+npm run models     # основные речевые модели (~350 МБ) в %APPDATA%\Jarvis\models  (или это сделает мастер первого запуска)
+npm run dev        # запуск для разработки
 ```
-Build the installer yourself: `npm run dist` → `release/Jarvis Setup x.y.z.exe`.
+Собрать установщик самому: `npm run dist` → `release/Jarvis-Setup-x.y.z.exe`.
 
-## First run
+## Первый запуск
 
-1. Start Jarvis. If speech models are missing it offers to download them (Settings → *Models & storage* lists everything).
-2. **AI agent** works immediately with free opencode models. For more/better models paste your key in *Settings → AI agent* (see [providers](#ai-providers--models)).
-3. Pick a voice in *Settings → Voice* (Fish Audio needs a free key; Piper works offline with no key).
-4. Say **«Джарвис, привет»** or press **Ctrl+Alt+J**. Emergency stop: **Ctrl+Alt+K**.
+1. Запустите Jarvis. Если нет речевых моделей, он предложит их скачать (всё перечислено в *Настройки → Модели и хранилище*).
+2. **ИИ-агент** сразу работает на бесплатных моделях opencode. Для других моделей вставьте ключ в *Настройки → ИИ-агент* (см. [провайдеры](#ии-провайдеры-и-модели)).
+3. **Голос** по умолчанию — «Сервер (бесплатно)», настраивать ничего не нужно. В *Настройки → Голос* можно выбрать свой ключ или полностью локальные голоса.
+4. Скажите **«Джарвис, привет»** или нажмите **Ctrl+Alt+J**. Аварийная остановка: **Ctrl+Alt+K**.
 
-## Using Jarvis
+## Как пользоваться
 
-Say the wake word, then your request — in one breath or after the confirmation:
+Скажите слово-активатор и просьбу — на одном дыхании или после подтверждения:
 
-* *«Джарвис, открой калькулятор и посчитай 12 умножить на 7»*
-* *"Jarvis, what's on my screen? Show me where the settings button is."* (it outlines it)
-* *«Можешь посмотреть, сколько у меня Робуксов?»* (opens the site, reads the page, answers)
-* *"Jarvis, remember that I'm working on project Atlas."*
-* *"Jarvis, read my unread email"* (with the Gmail connector)
-* *"Jarvis, create a command *Evening*: turn the music down and say goodnight."*
-* *«Новый диалог»* — fresh chat. *«Стоп»* — cancel the current task.
+* *«Джарвис, открой калькулятор и посчитай двенадцать умножить на семь»*
+* *«Что у меня на экране? Покажи, где кнопка настроек»* (он её обведёт)
+* *«Сделай потише»* · *«пауза»* · *«сверни все окна»* — мгновенно, без модели
+* *«Поставь браузер на левую половину экрана, а Телеграм на правую»*
+* *«Запомни, что я работаю над проектом Атлас»*
+* *«Прочитай мои непрочитанные письма»* (с коннектором Gmail)
+* *«Создай команду *Вечер*: сделай музыку тише и скажи спокойной ночи»*
+* *«Новый диалог»* — чистый чат. *«Стоп»* — отменить текущую задачу.
 
-You can also type in the chat. Permission requests and questions appear both on the always-on-top HUD and in the chat; answering either closes both.
+Можно и писать в чат. Запросы разрешений и вопросы появляются и на HUD поверх всех окон, и в чате; ответ в одном месте закрывает оба.
 
-## Settings guide
+## Настройки
 
-Settings is split into sections:
+Настройки разделены на разделы:
 
-| Section | What is there |
+| Раздел | Что внутри |
 |---|---|
-| **General** | Accent colour, theme, interface language, HUD corner, subtitles, autostart. |
-| **AI agent** | Provider + API key (with *Get API key* buttons), model picker or any model id, vision model (auto = current model if it can see images), permission level, auto-new-chat timeout, working folder, your standing instructions. |
-| **Connectors** | Add/sign in/disable MCP services — see below. |
-| **Listening** | Wake phrases, sensitivity, "Yes, sir" confirmation, follow-up window, microphone, recogniser, hotkey. |
-| **Voice** | Engine (Fish / Piper / local clone), voices + preview, speed, volume, effects, Fish credentials. |
-| **Models & storage** | On-device speech models (download/installed), OCR languages. |
-| **About** | Version, memory use, open logs, copy diagnostics. |
+| **Общие** | Акцентный цвет, тема, язык интерфейса, угол HUD, субтитры, автозапуск. |
+| **ИИ-агент** | Провайдер и API-ключ (с кнопками *Получить ключ*), выбор модели или любой id, модель-зрение (авто = текущая, если она видит картинки), уровень разрешений, **выгрузка агента при простое**, автоновый чат, рабочая папка, ваши постоянные инструкции. |
+| **Коннекторы** | Добавление, вход и отключение MCP-сервисов — см. ниже. |
+| **Слух** | Фразы активации, чувствительность, подтверждение «Да, сэр», окно после активации, микрофон, распознаватель, горячая клавиша. |
+| **Голос** | Источник (Сервер бесплатно / Свой ключ / Локально), голоса и прослушивание, скорость, громкость, эффекты. |
+| **Модели и хранилище** | Речевые модели на устройстве (скачать / установлено), языки OCR. |
+| **О программе** | Версия, **обновления**, расход памяти, открыть логи, скопировать диагностику. |
 
-## AI providers & models
+## ИИ-провайдеры и модели
 
-* **opencode Zen (default)** — free models such as `deepseek-v4.1-flash-free` and `glm-5.3-flash-free` work without a key. An opencode key (<https://opencode.ai/auth>) unlocks the rest.
-* **Any provider** — *Settings → AI agent → provider*: OpenRouter, OpenAI, Anthropic, Google, DeepSeek, Groq, xAI, Mistral, Together, Cerebras… (230+ through opencode). Each has a *Get API key* button; the key is stored by opencode in Jarvis' private data dir.
-* **Your own endpoint** — "Custom OpenAI-compatible endpoint" (Ollama, LM Studio, vLLM, any gateway): base URL + key + model ids.
-* **Vision** — models that accept images (GLM 5.3, DeepSeek V4.1, GPT-4o, Claude, Gemini…) let Jarvis look at screenshots directly; otherwise a free VL model is used for `ask_screen`.
+* **opencode Zen (по умолчанию)** — бесплатные модели вроде `deepseek-v4.1-flash-free` и `glm-5.3-flash-free` работают без ключа. Ключ opencode (<https://opencode.ai/auth>) открывает остальные.
+* **Любой провайдер** — *Настройки → ИИ-агент → провайдер*: OpenRouter, OpenAI, Anthropic, Google, DeepSeek, Groq, xAI, Mistral, Together, Cerebras… (230+ через opencode). У каждого есть кнопка *Получить ключ*; ключ хранит opencode в закрытой папке данных Jarvis.
+* **Свой endpoint** — «Свой OpenAI-совместимый endpoint» (Ollama, LM Studio, vLLM, любой шлюз): базовый URL, ключ, id моделей.
+* **Зрение** — модели, принимающие изображения (GLM 5.3, DeepSeek V4.1, GPT-4o, Claude, Gemini…), позволяют Джарвису смотреть на скриншоты напрямую; иначе для `ask_screen` используется бесплатная VL-модель.
 
-## Voices
+## Голоса
 
-| Engine | Setup | Notes |
+| Источник | Настройка | Примечания |
 |---|---|---|
-| **Fish Audio** (default) | Get a free key at <https://fish.audio/app/api-keys> (button in *Settings → Voice*), paste it. RU/EN Jarvis voice ids and the model `s2.1-pro-free` are pre-filled. | Cloud: spoken sentences are sent to api.fish.audio. Falls back to Piper on any error. |
-| **Piper** | Download the voices in *Models & storage*. | Fully offline, instant, lighter quality. |
-| **XTTS clone** (optional, GPU) | See [`voice/`](voice) — prepare a dataset from your own clips (`prep_dataset.py`), evaluate (`eval_mel.py`), light fine-tune (`ft_xtts.py`, fits an 8 GB GPU), install with `voice/install-clone.ps1`. | XTTS-v2 is **non-commercial** (CPML). Use clips you have the right to use; weights are not distributed. |
+| **Сервер (бесплатно)** (по умолчанию) | Ничего: выберите в *Настройки → Голос*. Голос Джарвиса приходит с общего сервера, который распределяет нагрузку по пулу ключей. | Облако: озвучиваемые фразы отправляются на сервер и в Fish Audio. Лимит по запросам в минуту на установку. При любой ошибке — откат на Piper. Сервер — отдельный (закрытый) проект `jarvis-tts-server`; в *Дополнительно → Адрес голосового сервера* можно указать свой. |
+| **Свой ключ** | Бесплатный ключ на <https://fish.audio/app/api-keys> (кнопка в *Настройки → Голос*), вставьте его. Id русского/английского голоса Джарвиса и модель `s2.1-pro-free` уже заполнены. | Облако: фразы идут прямо в api.fish.audio. |
+| **Локально** | Голоса Piper скачиваются в *Модели и хранилище*; клон XTTS по желанию (см. [`voice/`](voice)). | Полностью офлайн. XTTS-v2 — **некоммерческая** лицензия (CPML); используйте записи, на которые у вас есть права, веса не распространяются. |
 
-## Connectors (Gmail, Calendar, Notion, GitHub…)
+## Коннекторы (Gmail, Календарь, Notion, GitHub…)
 
-*Settings → Connectors* lets you plug [MCP](https://modelcontextprotocol.io) servers into the agent. Each connector adds tools named
-`<service>_*`; **reading/searching runs freely, anything that writes, sends or deletes asks for confirmation** (unless you chose *full autonomy*), and the agent is told to confirm irreversible actions out loud.
+*Настройки → Коннекторы* подключают [MCP](https://modelcontextprotocol.io)-серверы к агенту. Каждый коннектор добавляет инструменты `<сервис>_*`;
+**чтение и поиск выполняются свободно, а всё, что пишет, отправляет или удаляет, требует подтверждения** (если не выбрана *полная автономия*), а агенту велено голосом подтверждать необратимые действия.
 
-**Add one:** pick it in the catalogue → fill what it asks for → *Add*. The agent restarts and the connector appears with a status chip. For services that use browser login press **Sign in** and finish in the browser; tokens are kept by opencode in Jarvis' data dir.
+**Как добавить:** выберите в каталоге → заполните, что просят → *Добавить*. Агент перезапустится, коннектор появится со значком состояния. Для сервисов с входом через браузер нажмите **Войти** и завершите вход в браузере; токены хранит opencode в папке данных Jarvis.
 
-| Connector | How it authenticates |
+| Коннектор | Как авторизуется |
 |---|---|
-| Notion, Linear, Sentry | Browser sign-in (OAuth) — nothing to prepare |
-| GitHub | Personal access token (button opens the token page) |
-| Context7, DeepWiki, Grep, Parallel Search | No key |
-| Brave Search | API key |
-| Filesystem, Playwright, Fetch | Run locally via `npx`/`uvx` (needs Node.js / uv) |
-| **Gmail, Calendar, Drive, Docs, Sheets** | Google's official remote MCP servers (Developer Preview) — needs **your own Google Cloud OAuth client**, see below |
-| Google Workspace (community) | `uvx workspace-mcp` — one local server for Gmail + Calendar + Drive + Docs, your own OAuth *Desktop* client |
-| **Custom** | Any remote URL (+ headers) or any local command (+ env vars) |
+| Notion, Linear, Sentry | Вход через браузер (OAuth) — ничего готовить не нужно |
+| GitHub | Персональный токен (кнопка открывает страницу токенов) |
+| Context7, DeepWiki, Grep, Parallel Search | Без ключа |
+| Brave Search | API-ключ |
+| Filesystem, Playwright, Fetch | Запускаются локально через `npx` / `uvx` (нужен Node.js / uv) |
+| **Gmail, Календарь, Диск, Документы, Таблицы** | Официальные удалённые MCP-серверы Google (Developer Preview) — нужен **ваш собственный OAuth-клиент в Google Cloud**, см. ниже |
+| Google Workspace (community) | `uvx workspace-mcp` — один локальный сервер для Gmail + Календаря + Диска + Документов, ваш OAuth-клиент типа *Desktop* |
+| **Свой** | Любой удалённый URL (+ заголовки) или любая локальная команда (+ переменные окружения) |
 
-### Gmail & Google Calendar setup (official servers)
+### Настройка Gmail и Google Календаря (официальные серверы)
 
-1. In [Google Cloud Console](https://console.cloud.google.com) create/select a project and join the Workspace MCP *Developer Preview* (<https://developers.google.com/workspace/guides/configure-mcp-servers>).
-2. Enable the **Gmail API** / **Google Calendar API** and their MCP services (`gmailmcp.googleapis.com`, `calendarmcp.googleapis.com`).
-3. *Google Auth Platform → Clients → Create client*: type **Web application**, tick **"Use this client for an AI-powered agent"**, and add the redirect URI
-   `http://127.0.0.1:19876/mcp/oauth/callback`. Configure the consent screen (External + yourself as test user is fine).
-4. In Jarvis: *Connectors → Gmail* → paste the **Client ID** and **Client secret** (scopes are pre-filled) → *Add* → *Sign in* and approve in the browser.
+1. В [Google Cloud Console](https://console.cloud.google.com) создайте/выберите проект и вступите в *Developer Preview* Workspace MCP (<https://developers.google.com/workspace/guides/configure-mcp-servers>).
+2. Включите **Gmail API** / **Google Calendar API** и их MCP-сервисы (`gmailmcp.googleapis.com`, `calendarmcp.googleapis.com`).
+3. *Google Auth Platform → Clients → Create client*: тип **Web application**, отметьте **«Use this client for an AI-powered agent»** и добавьте redirect URI
+   `http://127.0.0.1:19876/mcp/oauth/callback`. Настройте экран согласия (External и вы сами в тестовых пользователях — достаточно).
+4. В Jarvis: *Коннекторы → Gmail* → вставьте **Client ID** и **Client secret** (области доступа уже заполнены) → *Добавить* → *Войти* и подтвердите в браузере.
 
-Prefer something simpler? Use **Google Workspace (community)**: create an OAuth client of type *Desktop app*, enable the APIs, paste ID + secret; the Google login opens on first use.
+Хотите проще? Возьмите **Google Workspace (community)**: создайте OAuth-клиент типа *Desktop app*, включите API, вставьте ID и secret; вход в Google откроется при первом обращении.
 
-Secrets (API keys, client secrets) are stored in `%APPDATA%\Jarvis\settings.json` on your machine only.
+Секреты (API-ключи, client secret) хранятся только на вашем компьютере в `%APPDATA%\Jarvis\settings.json`.
 
-## Computer use
+## Управление компьютером и системой
 
-On first use in a chat Jarvis asks permission once ("I need to see the screen and control mouse and keyboard — allow for this chat?"). While it controls the PC the screen edge glows and a badge shows; **Ctrl+Alt+K** stops everything instantly.
+При первом использовании в чате Джарвис один раз спрашивает разрешение («Мне нужно смотреть на экран и управлять мышью и клавиатурой. Разрешаете на этот чат?»). Пока он управляет ПК, края экрана светятся и виден значок; **Ctrl+Alt+K** мгновенно останавливает всё.
 
-Tools the agent has (all prefixed `jarvis_`):
+Инструменты агента (все с префиксом `jarvis_`):
 
-* **Accessibility (preferred)**: `list_apps`, `get_app_state`, `click`, `set_value`, `type_text`, `press_key`, `scroll`, `drag`, `perform_secondary_action` (Open Computer Use — works on background windows, no focus stealing).
-* **Any app, pixel level**: `screen` (OCR + UIA map with stable item numbers), `click_text`, `act`, `ask_screen` (vision), `type` (real Unicode keystrokes: focus + click field + type + Enter), `keys` (chords/media keys), `scroll_at` (mouse wheel anywhere), `mouse` (click/double/right/middle/move/down/up/drag, ctrl/shift modifiers), `hold_key`, `sequence` (timed steps, e.g. hold **W** 500 ms → wait → **Enter**; `scan:true` for games).
-* **Waiting**: `wait` (until the screen settles), `wait_for` (until text/window appears) — so it never spams retries while a page loads.
-* **Apps & windows**: `open_app`, `open_url`, `focus_window`, `windows`, `highlight`, clipboard.
+* **Окна по id (предпочтительно)**: `list_apps`, `get_app_state` (дерево доступности и скриншот, работает для перекрытого окна), `click`, `set_value`, `type_text`, `press_key`, `scroll`, `drag`, `paste`, `perform_secondary_action` — каждое действие активирует окно, ждёт, пока интерфейс стабилизируется, и возвращает обновлённое дерево. Названия клавиш: и `ctrl+shift+t`, и keysym в стиле X11 (`Control_L+Shift_L+t`, `Return`, `Page_Down`).
+* **Любое приложение, на уровне пикселей**: `screen` (карта OCR + UIA со стабильными номерами), `click_text`, `act`, `ask_screen` (зрение), `type` (настоящий Unicode-ввод: фокус + клик в поле + ввод + Enter), `keys` (сочетания / медиаклавиши), `scroll_at` (колесо мыши где угодно), `mouse` (клик / двойной / правый / средний / перемещение / зажать / отпустить / перетащить, модификаторы ctrl/shift), `hold_key`, `sequence` (шаги с таймингом, например зажать **W** на 500 мс → пауза → **Enter**; `scan:true` для игр).
+* **Ожидание**: `wait` (пока экран не успокоится), `wait_for` (пока не появится текст / окно) — чтобы не сыпать повторами, пока грузится страница.
+* **Приложения и окна**: `open_app`, `open_url`, `focus_window`, `windows`, `highlight`, буфер обмена.
+* **Система**: `volume` (общая / по приложению), `media`, `window_control` (переместить, изменить размер, привязать, свернуть, развернуть, закрыть, поверх всех), `desktop` (рабочий стол, блокировка, выключить экран, яркость).
 
-## Voice commands (routines) and memory
+Движок — `native/JarvisNative` (C#, .NET Framework 4.8, exe ~70 КБ, запуск ~0,2 с): UI Automation с кэшированием свойств, захват через `PrintWindow` (работает для перекрытых окон), SendInput с независимыми от раскладки названиями клавиш, Windows OCR (русский и английский), Core Audio для громкости. Протокол: JSON-строки через stdin/stdout (`scripts/test-native.mts` — дымовой тест).
 
-* *"Jarvis, create a command *Привет*: open Spotify and say good morning."* — stored as a routine (steps: say, open, run, keys, type, wait, agent). When you say the phrase it runs instantly, without the model. Re-saving a name edits it; delete by voice or on the **Commands** page.
-* **Memory** page: durable facts Jarvis knows about you (editable, pinnable). They are injected every turn; routines are *not* stored as memory.
+## Распознавание речи
 
-## Resource use
+* **Русский → GigaAM v3** (CTC с пунктуацией), **английский → Parakeet-TDT 110M**; Silero VAD и потоковый распознаватель открывают слово-активатор.
+* Замеры на синтезированной Fish речи (RU / EN / смешанной, `scripts/bench-stt.mts`): GigaAM пишет английские названия латиницей внутри русских фраз («открой Spotify и включи Daft Punk»), тогда как многоязычная Parakeet-v3 их транслитерирует; Parakeet-110M точнее Parakeet-v3 на английском (1–3 % против 4–6 % WER) и в четыре раза меньше. Поэтому пара остаётся — многоязычная модель на 465 МБ не нужна.
+* **Длинная диктовка**: минута речи распознаётся за один проход без потерь (`scripts/bench-long.mts`). Пауза в конце фразы адаптивная (короткая команда ≈ 0,7 с, длинный запрос до 1,5 с), фразы могут длиться больше минуты.
+* Распознаватели загружаются только когда команда действительно ожидается (услышано слово-активатор / открыто окно уточнения), а не на каждый звук в комнате.
 
-* ASR models live in a **child process** started when you begin speaking and stopped after 2 min idle.
-* The XTTS engine unloads after N idle minutes (default 10); Jarvis uses Piper until it is ready.
-* PowerShell helpers and the Open Computer Use server stop when unused; the main window is destroyed when closed to the tray.
-* Typical idle: ~250 MB Jarvis itself, ~1 GB all processes (clone engine unloaded, window in tray).
+## Голосовые команды и память
 
-## Troubleshooting
+* *«Джарвис, создай команду *Привет*: открой Spotify и скажи доброе утро»* — сохраняется как команда. Когда вы говорите фразу, она выполняется мгновенно, без модели. Повторное сохранение с тем же именем редактирует; удалить можно голосом или на странице **Команды**. Шаги: `say`, `open`, `focus`, `click`, `type`, `keys`, `hold`, `scroll`, `move`, `wait`, `run`, `agent`; у каждого шага можно задать паузу после него.
+* Страница **Память**: постоянные факты о вас (можно править и закреплять). Они добавляются в каждый запрос; команды в память *не* попадают.
 
-| Symptom | Try |
+## Обновления
+
+Установленное приложение проверяет GitHub Releases (через 20 с после запуска, затем каждые 6 ч). *Настройки → О программе → Обновления*: **Спрашивать** (уведомление, вы нажимаете *Скачать*), **Скачивать автоматически** или **Не проверять**. Когда загрузка готова, нажмите *Перезапустить и установить*. Релизы собирает workflow `Release` при пуше тега `v*`.
+
+## Потребление ресурсов
+
+* Сервер агента (самый большой процесс) **выгружается после 10 минут простоя** и за пару секунд запускается снова, когда вы обращаетесь к Джарвису (Настройки → ИИ-агент).
+* GPU, сеть и аудио работают внутри главного процесса, а окно HUD заодно держит микрофон — поэтому всего два рендерера Electron.
+* Модели распознавания живут в **дочернем процессе**, который стартует, когда ожидается команда, и завершается после минуты простоя (возвращает ~500 МБ).
+* Движок клона голоса (XTTS, GPU) выгружается через N минут простоя (по умолчанию 10); пока он не готов, Джарвис говорит Piper.
+* Нативный помощник сжимает рабочий набор при простое; главное окно уничтожается при закрытии в трей.
+
+Типично: ~0,9 ГБ на все процессы с загруженным агентом (~0,4 ГБ, пока он спит).
+
+## Если что-то не работает
+
+| Симптом | Что сделать |
 |---|---|
-| Something is off | *Settings → About → Open logs / Copy diagnostics* (`%APPDATA%\Jarvis\logs\jarvis.log`). |
-| Stuck on "Listening" / doesn't hear the wake word | Check the microphone in *Settings → Listening*; raise sensitivity; make sure the speech models are installed. |
-| No voice / robotic voice | Fish key missing or out of credits → Jarvis falls back to Piper. Install Piper voices in *Models & storage*. |
-| Typing goes to the wrong app | Jarvis focuses the app before sending keys; use `jarvis_type` with `app`. Games may need `scan:true`. |
-| Russian on screen is read badly | Add the Russian language pack in Windows (OCR uses installed languages). |
-| A connector says *Sign-in needed* | Press **Sign in** and finish in the browser; for Google check the redirect URI `http://127.0.0.1:19876/mcp/oauth/callback`. |
-| Local connector *Failed* | It needs Node.js (`npx`) or uv (`uvx`) on PATH. |
-| Cloned voice errors | Needs an NVIDIA GPU with ~5 GB free VRAM; Jarvis falls back to Piper. |
+| Что-то не так | *Настройки → О программе → Открыть логи / Скопировать диагностику* (`%APPDATA%\Jarvis\logs\jarvis.log`). |
+| Застрял на «Слушаю» / не слышит слово-активатор | Проверьте микрофон в *Настройки → Слух*; повысьте чувствительность; убедитесь, что речевые модели установлены. |
+| Нет голоса / голос роботизированный | Бесплатный сервер голоса может быть недоступен или ограничил вас → Джарвис говорит Piper; установите голоса Piper в *Модели и хранилище* или используйте свой ключ Fish. |
+| Ввод уходит не в то приложение | Джарвис фокусирует приложение перед нажатием клавиш; используйте `jarvis_type` с `app`. Для игр может понадобиться `scan:true`. |
+| Русский текст на экране читается плохо | Добавьте русский языковой пакет Windows (OCR использует установленные языки). |
+| Коннектор пишет *Нужен вход* | Нажмите **Войти** и завершите вход в браузере; для Google проверьте redirect URI `http://127.0.0.1:19876/mcp/oauth/callback`. |
+| Локальный коннектор *Ошибка* | Нужен Node.js (`npx`) или uv (`uvx`) в PATH. |
+| Не видно HUD | Он в углу, выбранном в *Общие*; прячется только пока главное окно в фокусе поверх него. |
+| Ошибки клона голоса | Нужна видеокарта NVIDIA с ~5 ГБ свободной VRAM; Джарвис откатывается на Piper. |
 
-## Privacy & safety
+## Приватность и безопасность
 
-* All speech recognition runs on your PC. No telemetry.
-* Network traffic: your chosen model endpoint, one-time model downloads (GitHub / Hugging Face), connectors you enable, and — only with a Fish Audio voice — the sentences Jarvis speaks.
-* Risky shell patterns always ask; computer control is consent-gated per chat; connector writes ask first; **Ctrl+Alt+K** is a global kill switch.
-* Screenshots taken for vision are sent to the model you selected — pick a local/endpoint model if that matters.
+* Всё распознавание речи происходит на вашем ПК. Без телеметрии.
+* Сетевой трафик: выбранный вами endpoint модели, разовые загрузки моделей (GitHub / Hugging Face), включённые коннекторы, проверки обновлений (GitHub) и — только при облачном голосе — озвучиваемые фразы (на бесплатный сервер голоса / в Fish Audio). Бесплатный сервер видит текст и случайный id установки, больше ничего.
+* Рискованные shell-команды всегда спрашивают; управление ПК — по согласию на каждый чат; запись через коннекторы — с подтверждением; **Ctrl+Alt+K** — глобальный аварийный выключатель.
+* Скриншоты для зрения отправляются выбранной вами модели — если это важно, выберите локальную модель или свой endpoint.
 
-## Development
+## Разработка
 
 ```bash
-npm run dev        # electron-vite dev server
+npm run dev        # dev-сервер electron-vite
+npm run native     # C#-помощник → resources/native/jarvis-native.exe
 npm run typecheck
-npm test           # unit tests (tsx --test)
+npm test           # модульные тесты (tsx --test)
 npm run build
-npm run dist       # unsigned NSIS installer in release/
+npm run dist       # неподписанный установщик NSIS в release/
 ```
 
-Layout: `src/main` (assistant orchestrator, opencode server manager, MCP tool server, computer-use layer, speech engine, TTS), `src/renderer` (React UI: assistant, commands, memory, settings, HUD, overlays), `src/shared` (types, connector catalogue), `resources/bridge.ps1` (Windows UIA/OCR/input bridge), `voice/` (optional clone tooling).
+Структура: `src/main` (оркестратор ассистента, менеджер сервера opencode, MCP-сервер инструментов, слой управления ПК, речевой движок, TTS, обновления), `src/renderer` (интерфейс на React: ассистент, команды, память, настройки, HUD, оверлеи), `src/shared` (типы, каталог коннекторов, шаги команд), `native/JarvisNative` (C#-движок управления ПК), `resources/bridge.ps1` (запасной мост на PowerShell), `voice/` (необязательные инструменты клонирования), `promo/` (скрипты, которыми сделан промо-ролик), `scripts/` (бенчмарки и дымовые тесты).
 
-Debug helpers are environment-gated (`JARVIS_SHOTS`, `JARVIS_TEST_*`) in `src/main/index.ts`.
+Отладочные помощники включаются переменными окружения (`JARVIS_SHOTS`, `JARVIS_TEST_*`, `JARVIS_USERDATA`, `JARVIS_PROMO`) в `src/main/index.ts`.
 
-Contributions are welcome — issues and PRs about new connectors (add an entry in `src/shared/connectors.ts`), voices, and computer-use reliability are especially useful.
+Вклад приветствуется — особенно issues и PR про новые коннекторы (добавьте запись в `src/shared/connectors.ts`), голоса и надёжность управления компьютером.
 
-## Licence
+## Лицензия
 
-MIT (this project). Third-party components and models keep their own licences — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Note XTTS-v2 is non-commercial, and film-character voices may be protected: use cloned voices for personal use only.
+MIT (этот проект). Сторонние компоненты и модели сохраняют свои лицензии — см. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). XTTS-v2 — некоммерческая модель, а голоса киноперсонажей могут быть защищены: используйте клонированные голоса только для личных целей.

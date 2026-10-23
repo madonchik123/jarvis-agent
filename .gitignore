@@ -30,3 +30,8 @@ voice/*.err
 voice/*.pt
 voice/*.safetensors
 voice/runs
+promo/build
+promo/out
+resources/native/
+native/**/bin/
+native/**/obj/

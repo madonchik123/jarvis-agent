@@ -7,6 +7,8 @@ import { PermissionStack } from './components/Overlays'
 import { api, IPC } from './api'
 import { bootstrap, useApp, useT } from './store'
 import { applyTheme } from './theme'
+// microphone capture + speech playback live in this always-present window
+if (!new URLSearchParams(location.search).has('noaudio')) void import('./audio')
 
 function Hud() {
   const ready = useApp((s) => s.ready)
@@ -44,7 +46,7 @@ function Hud() {
         </AnimatePresence>
         <motion.div
           className="hud-orb"
-          animate={{ scale: active ? 1 : 0.62, opacity: active ? 1 : 0.8 }}
+          animate={{ scale: active ? 1 : 0.62, opacity: active ? 1 : 0.92 }}
           transition={{ type: 'spring', stiffness: 220, damping: 22 }}
           style={{ transformOrigin: right ? 'bottom right' : 'bottom left' }}
           onMouseEnter={() => api.send(IPC.window, 'hud-interactive')}

@@ -1,6 +1,7 @@
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
 import { createInterface } from 'readline'
 import { join } from 'path'
+import { existsSync } from 'fs'
 import { app } from 'electron'
 
 export interface WinWindow {
@@ -50,7 +51,11 @@ export interface OcrResult {
 
 const scriptPath = () => (app.isPackaged ? join(process.resourcesPath, 'bridge.ps1') : join(app.getAppPath(), 'resources', 'bridge.ps1'))
 
-/** Persistent PowerShell process exposing mouse/keyboard/UIA/OCR/screenshot primitives. */
+/** jarvis-native.exe (C#, .NET Framework 4.8 — part of Windows): the computer-use engine. bridge.ps1 is the fallback. */
+export const nativePath = () => (app.isPackaged ? join(process.resourcesPath, 'native', 'jarvis-native.exe') : join(app.getAppPath(), 'resources', 'native', 'jarvis-native.exe'))
+export const hasNative = () => existsSync(nativePath())
+
+/** Persistent helper process exposing mouse/keyboard/UIA/OCR/screenshot and window-state primitives (JSON lines). */
 export class WinBridge {
   private proc: ChildProcessWithoutNullStreams | null = null
   private pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>()
@@ -63,9 +68,9 @@ export class WinBridge {
   private start() {
     if (this.ready) return this.ready
     this.ready = new Promise<void>((resolve, reject) => {
-      const p = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', scriptPath()], {
-        windowsHide: true
-      })
+      const p = hasNative()
+        ? spawn(nativePath(), [], { windowsHide: true })
+        : spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-ExecutionPolicy', 'Bypass', '-File', scriptPath()], { windowsHide: true })
       this.proc = p
       const rl = createInterface({ input: p.stdout })
       rl.on('line', (line) => {

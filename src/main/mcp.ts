@@ -1,6 +1,6 @@
 import { createServer, IncomingMessage, Server } from 'http'
 import { randomBytes } from 'crypto'
-import { mkdirSync, rmSync } from 'fs'
+import { mkdirSync, readFileSync, rmSync } from 'fs'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { z } from 'zod'
@@ -9,7 +9,6 @@ import type { HighlightTarget, Routine, RoutineStep, Settings } from '../shared/
 import type { MemoryStore, RoutineStore } from './store'
 import type { WinBridge, WinWindow } from './win'
 import { Computer } from './computer'
-import { Ocu } from './ocu'
 
 export interface Hub {
   settings(): Settings
@@ -62,26 +61,41 @@ const targetSchema = z.object({
 })
 
 const stepSchema = z.object({
-  type: z.enum(['say', 'open', 'run', 'keys', 'type', 'wait', 'agent']),
-  text: z.string().optional().describe('say/type: text'),
-  target: z.string().optional().describe('open: app name, URL or file path'),
+  type: z.enum(['say', 'open', 'focus', 'click', 'type', 'keys', 'hold', 'scroll', 'move', 'wait', 'run', 'agent']),
+  text: z.string().optional().describe('say/type: text; click: visible text to click (instead of x,y)'),
+  target: z.string().optional().describe('open: app name, URL or file path; focus: window title or app'),
   command: z.string().optional().describe('run: PowerShell command'),
-  keys: z.string().optional().describe('keys: e.g. "ctrl+shift+t"'),
-  ms: z.number().optional().describe('wait: milliseconds'),
+  keys: z.string().optional().describe('keys: e.g. "ctrl+shift+t", "ctrl+a delete"; hold: key(s) to hold'),
+  ms: z.number().optional().describe('wait / hold: milliseconds'),
+  x: z.number().optional().describe('click / move / scroll: screen x'),
+  y: z.number().optional(),
+  button: z.enum(['left', 'right', 'middle']).optional(),
+  count: z.number().optional().describe('click: 2 = double-click'),
+  direction: z.enum(['up', 'down', 'left', 'right']).optional(),
+  amount: z.number().optional().describe('scroll: wheel notches'),
+  scan: z.boolean().optional().describe('keys / hold: hardware scan codes for games'),
+  charDelay: z.number().optional().describe('type: ms between characters'),
+  after: z.number().optional().describe('pause in ms after this step'),
   prompt: z.string().optional().describe('agent: natural-language sub-task')
 })
 
 export function toSteps(raw: z.infer<typeof stepSchema>[]): RoutineStep[] {
   const out: RoutineStep[] = []
   for (const s of raw) {
+    const after = s.after ? { after: s.after } : {}
     switch (s.type) {
-      case 'say': out.push({ type: 'say', text: s.text || '' }); break
-      case 'open': out.push({ type: 'open', target: s.target || '' }); break
-      case 'run': out.push({ type: 'run', command: s.command || '' }); break
-      case 'keys': out.push({ type: 'keys', keys: s.keys || '' }); break
-      case 'type': out.push({ type: 'type', text: s.text || '' }); break
-      case 'wait': out.push({ type: 'wait', ms: s.ms ?? 500 }); break
-      case 'agent': out.push({ type: 'agent', prompt: s.prompt || '' }); break
+      case 'say': out.push({ type: 'say', text: s.text || '', ...after }); break
+      case 'open': out.push({ type: 'open', target: s.target || '', ...after }); break
+      case 'focus': out.push({ type: 'focus', target: s.target || s.text || '', ...after }); break
+      case 'run': out.push({ type: 'run', command: s.command || '', ...after }); break
+      case 'keys': out.push({ type: 'keys', keys: s.keys || '', ...(s.scan ? { scan: true } : {}), ...after }); break
+      case 'type': out.push({ type: 'type', text: s.text || '', ...(s.charDelay ? { charDelay: s.charDelay } : {}), ...after }); break
+      case 'wait': out.push({ type: 'wait', ms: s.ms ?? 500, ...after }); break
+      case 'click': out.push({ type: 'click', ...(s.text ? { text: s.text } : { x: s.x ?? 0, y: s.y ?? 0 }), ...(s.button ? { button: s.button } : {}), ...(s.count ? { count: s.count } : {}), ...after }); break
+      case 'move': out.push({ type: 'move', x: s.x ?? 0, y: s.y ?? 0, ...after }); break
+      case 'scroll': out.push({ type: 'scroll', direction: s.direction ?? 'down', amount: s.amount ?? 5, ...(s.x !== undefined ? { x: s.x, y: s.y ?? 0 } : {}), ...after }); break
+      case 'hold': out.push({ type: 'hold', keys: s.keys || 'w', ms: s.ms ?? 500, ...(s.scan ? { scan: true } : {}), ...after }); break
+      case 'agent': out.push({ type: 'agent', prompt: s.prompt || '', ...after }); break
     }
   }
   return out
@@ -94,7 +108,6 @@ export class JarvisMcp {
   private http: Server | null = null
   port = 0
   readonly computer: Computer
-  readonly ocu = new Ocu()
 
   constructor(private hub: Hub) {
     this.computer = new Computer({
@@ -110,12 +123,14 @@ export class JarvisMcp {
     return `http://127.0.0.1:${this.port}/mcp`
   }
 
-  /** app the agent last acted on: keystrokes are routed to it (OCU clicks are background-only and leave focus elsewhere) */
+  /** app / window the agent last acted on: keystrokes and window tools default to it */
   private lastApp = ''
+  private lastWindow = 0
 
   newTask() {
     this.computer.reset()
     this.lastApp = ''
+    this.lastWindow = 0
   }
 
   async start() {
@@ -150,7 +165,6 @@ export class JarvisMcp {
 
   stop() {
     this.http?.close()
-    void this.ocu.stop()
   }
 
   // ------------------------------------------------------------------ helpers
@@ -749,164 +763,291 @@ export class JarvisMcp {
       }
     )
 
-    // ---- Codex-style computer use (Open Computer Use, MIT): accessibility tree + element indexes -----------------------
-    const clip = (t: string, n: number) => (t.length > n ? t.slice(0, n) + `\n… [${t.length - n} more characters cut — call get_app_state with a larger text_limit / query a narrower window]` : t)
-    const ocuRun = async (name: string, args: Record<string, unknown>, isAction: boolean) => {
-      const g = await this.consent()
-      if (g) return g
-      const lp = this.loop(isAction ? 'ocu_' + name : 'screen', args, isAction)
-      if (lp) return lp
-      const ep = c.begin()
-      if (typeof args.app === 'string' && args.app) this.lastApp = args.app
+    // ---- Codex-style computer use (native jarvis-native.exe): windows by id, indexed accessibility tree, occlusion-proof screenshots ----
+    // Every input activates its target window first and waits for the UI to settle; the refreshed tree comes back so the model
+    // rarely needs a separate get_app_state.
+    type NWin = { id: number; hwnd: number; title: string; process: string; app: string; focused: boolean; minimized: boolean }
+    const clip = (t: string, n: number) => (t.length > n ? t.slice(0, n) + `\n… [${t.length - n} more characters cut — call get_app_state with max_nodes / look at a narrower window]` : t)
+    const N = () => h.win
+    const windowFor = async (a: { app?: string; window?: number }, ep: number): Promise<NWin> => {
+      const want = (a.app || '').trim().toLowerCase()
+      const pick = (ws: NWin[]) => {
+        if (a.window) return ws.find((w) => w.id === a.window) ?? null
+        const q = want || (this.lastWindow ? '' : this.lastApp.toLowerCase())
+        if (!q && this.lastWindow) return ws.find((w) => w.id === this.lastWindow) ?? null
+        if (!q) return null
+        const proc = (w: NWin) => w.process.toLowerCase()
+        return (
+          ws.find((w) => proc(w) === q || w.app.toLowerCase() === q) ??
+          ws.find((w) => w.title.toLowerCase() === q) ??
+          ws.find((w) => proc(w).includes(q) || q.includes(proc(w))) ??
+          ws.find((w) => w.title.toLowerCase().includes(q)) ??
+          null
+        )
+      }
+      // the app may still be opening: wait for its window here instead of letting the model retry
+      for (let i = 0; i < 10; i++) {
+        const w = pick(await N().call<NWin[]>('list_windows'))
+        if (w) {
+          this.lastWindow = w.id
+          this.lastApp = a.app || w.process
+          return w
+        }
+        if (a.window) break
+        c.check(ep)
+        await sleep(1000)
+      }
+      throw new Error(a.window ? `Window ${a.window} is closed. Call jarvis_list_apps for current windows.` : `No open window for "${a.app || this.lastApp}". Start it with jarvis_open_app (then jarvis_wait), or call jarvis_list_apps for exact names.`)
+    }
+    const stateText = (w: NWin, st: any, withHeader = true) => {
+      const acc = st.accessibility || {}
+      const tree: string = acc.tree || ''
+      const lines = tree.split(/\r?\n/).filter(Boolean)
+      const parts: string[] = []
+      if (withHeader) {
+        const shot = st.screenshot ? ` · screenshot ${st.screenshot.width}×${st.screenshot.height} (x,y and Frame values are in this screenshot)` : ''
+        parts.push(`Window ${w.id} · "${w.title}" · ${w.process}${w.focused ? ' · focused' : ''}${shot}`)
+      }
+      if (acc.focused_element) parts.push(`Focused: ${acc.focused_element}`)
+      if (acc.selected_text) parts.push(`Selected text: ${clip(acc.selected_text, 600)}`)
+      parts.push(clip(tree, 16000) || '(no accessibility elements)')
+      if (acc.truncated) parts.push('(tree truncated — pass max_nodes to see more)')
+      if (acc.document_text) parts.push(`Document text:\n${clip(acc.document_text, 4000)}`)
+      // custom-drawn UIs (Qt/Telegram, games, canvas) expose almost nothing useful
+      const named = lines.filter((l) => /^\s*\d+ \S+( \S+)? [^\s{(]/.test(l) && !/^\s*\d+ (pane|group|custom|window)\b/.test(l.trim().replace(/^\d+ /, ''))).length
+      if (lines.length < 6 || named < 3)
+        parts.push('NOTE: this window exposes almost no accessibility info (custom-drawn UI). Use the screenshot coordinates (click x,y), or jarvis_screen + jarvis_click_text("visible label") and jarvis_type(text, into:"field label").')
+      return parts.join('\n')
+    }
+    const imageOf = (st: any) => {
       try {
-        c.check(ep)
-        let r = await this.ocu.call(name, args)
-        // The app is probably still opening / its window not built yet: wait and retry here instead of letting the
-        // model spam the tool (each retry used to cost a full model round-trip).
-        const notReady = (t: string) => /not running|no (key )?window|not found|no such app|could not find|window.*not.*(available|found)/i.test(t)
-        if (name === 'get_app_state' && r.isError && notReady(r.text)) {
-          for (let i = 0; i < 8 && r.isError && notReady(r.text); i++) {
-            await new Promise((res) => setTimeout(res, 1250))
-            c.check(ep)
-            r = await this.ocu.call(name, args)
-          }
-          if (r.isError) r.text += '\n(Waited ~10 s for the app to appear. If it is not running start it with jarvis_open_app, then call jarvis_wait.)'
-        }
-        c.check(ep)
-        let body = clip(r.text, name === 'get_app_state' ? 16000 : 9000) || '(done)'
-        if (name === 'get_app_state' && !r.isError) {
-          // custom-drawn UIs (Qt/Telegram, games, some Electron apps) expose only anonymous "group ID: class …" nodes
-          const lines = r.text.split('\n').filter((l) => l.trim())
-          const anon = lines.filter((l) => /ID: class /.test(l)).length
-          if (lines.length > 20 && anon / lines.length > 0.45) {
-            body += '\n\nNOTE: this app exposes almost no accessibility info (custom-drawn UI). Do NOT rely on element indexes here: use jarvis_screen + jarvis_click_text("visible label"), jarvis_type(text, into:"field label", submit) for typing, and jarvis_keys for shortcuts.'
-          }
-        }
-        const content: any[] = [{ type: 'text', text: body }]
-        if (r.image && h.isVision()) content.push({ type: 'image', data: r.image.data, mimeType: r.image.mimeType })
-        return r.isError ? { content, isError: true } : { content }
-      } catch (e: any) {
-        const m = String(e?.message || e)
-        return err(m.includes('timed out') ? 'The app did not respond in time. Try get_app_state again.' : m + '\nIf the app is not running use jarvis_open_app first; call jarvis_list_apps to see exact app names.')
+        const p = st?.screenshot?.path
+        if (!p) return null
+        const data = readFileSync(p).toString('base64')
+        rmSync(p, { force: true })
+        return { type: 'image', data, mimeType: 'image/jpeg' }
+      } catch {
+        return null
       }
     }
+    /** run one window action, then return what it did + the refreshed tree */
+    const winAction = async (name: string, a: any, cmd: string, args: Record<string, unknown>) => {
+      const g = await this.consent()
+      if (g) return g
+      const lp = this.loop('win_' + name, a, true)
+      if (lp) return lp
+      const ep = c.begin()
+      try {
+        const w = await windowFor(a, ep)
+        c.check(ep)
+        const r = await N().call<any>(cmd, { window: w.id, ...args }, 45000)
+        c.check(ep)
+        let out = `${r?.done ?? 'done'}${r?.warning ? ` — WARNING: ${r.warning}` : ''}`
+        const now: NWin | null = r?.window ?? null
+        if (!now) return text(out + '\nThe window closed.')
+        const st = await N().call<any>('get_window_state', { window: now.id, include_screenshot: false, max_nodes: 450 }, 30000)
+        return text(`${out}\n\nUpdated state of window ${now.id} "${now.title}":\n${stateText(now as NWin, st, false)}`)
+      } catch (e: any) {
+        return err(String(e?.message || e))
+      }
+    }
+    const target = {
+      app: z.string().optional().describe('app/process name or window title, e.g. "Калькулятор", "vivaldi", "Telegram" (defaults to the last app you used)'),
+      window: z.number().optional().describe('window id from jarvis_list_apps / get_app_state (more precise than app)')
+    }
+    const idx = z.union([z.number(), z.string()]).describe('element index from the latest get_app_state of this window')
+
     s.registerTool(
       'list_apps',
-      { description: 'List running apps (and recently used ones) with exact names to use in the other computer tools.', inputSchema: {} },
-      async () => {
-        const r = await ocuRun('list_apps', {}, false)
-        return r
+      { description: 'Running apps with their open windows (ids + titles), and installed apps you can start with jarvis_open_app.', inputSchema: { installed: z.boolean().optional().describe('also list installed apps (default true)') } },
+      async (a) => {
+        const g = await this.consent()
+        if (g) return g
+        try {
+          const r = await N().call<any>('list_apps', { installed: a.installed !== false }, 30000)
+          const run = (r.running as any[]).map((x) => `- ${x.displayName}  (${x.id})\n${(x.windows as any[]).map((w) => `    window ${w.id} "${w.title}"${w.focused ? ' [focused]' : ''}${w.minimized ? ' [minimized]' : ''}`).join('\n')}`)
+          const inst = (r.installed as any[]).map((x) => x.displayName)
+          return text(`Running:\n${run.join('\n')}${inst.length ? `\n\nInstalled (start with jarvis_open_app): ${inst.join(', ')}` : ''}`)
+        } catch (e: any) {
+          return err(String(e?.message || e))
+        }
       }
     )
     s.registerTool(
       'get_app_state',
       {
         description:
-          "PRIMARY way to look at an app: returns the app's key window as an indexed accessibility tree (every control with its element_index, role, label and available secondary actions). Call it once per task step before acting on an app, and again after the UI changes. Works on background windows.",
-        inputSchema: {
-          app: z.string().describe('app name from jarvis_list_apps (e.g. "Калькулятор", "vivaldi")'),
-          max_tree_nodes: z.number().optional().describe('default 450; raise for long pages/lists'),
-          text_limit: z.union([z.number(), z.literal('max')]).optional().describe('max characters of text content per node, default 300')
-        }
+          "PRIMARY way to look at an app: its window as an indexed accessibility tree (every control with element index, role, label, state, secondary actions and Frame in screenshot coordinates) plus a screenshot that works even when the window is covered. Call once per step before acting, and after big UI changes (actions already return the refreshed tree).",
+        inputSchema: { ...target, max_nodes: z.number().optional().describe('default 450; raise for long pages/lists'), screenshot: z.boolean().optional().describe('default true') }
       },
-      async (a) => ocuRun('get_app_state', { ...a, max_tree_nodes: a.max_tree_nodes ?? 450, text_limit: a.text_limit ?? 300 }, false)
+      async (a) => {
+        const g = await this.consent()
+        if (g) return g
+        const lp = this.loop('screen', a, false)
+        if (lp) return lp
+        const ep = c.begin()
+        try {
+          const w = await windowFor(a, ep)
+          const st = await N().call<any>('get_window_state', { window: w.id, include_screenshot: a.screenshot !== false, max_nodes: a.max_nodes ?? 450, max_dim: 1600 }, 30000)
+          const img = imageOf(st)
+          const content: any[] = [{ type: 'text', text: stateText((st.window as NWin) ?? w, st) }]
+          if (img && h.isVision()) content.push(img)
+          return { content }
+        } catch (e: any) {
+          return err(String(e?.message || e))
+        }
+      }
     )
     s.registerTool(
       'click',
       {
-        description:
-          'Click an element by element_index (preferred, from the latest get_app_state) or at x,y pixel coordinates of the app window. Returns the refreshed app state. Use click_count 2 for double-click.',
-        inputSchema: {
-          app: z.string(),
-          element_index: z.string().optional(),
-          x: z.number().optional(),
-          y: z.number().optional(),
-          click_count: z.number().optional(),
-          click_method: z.enum(['auto', 'accessibility', 'app_post']).optional()
-        }
+        description: 'Click an element by element_index (preferred) or at x,y in the window screenshot. Activates the window first, waits for the UI to settle and returns the refreshed tree. click_count 2 = double-click; mouse_button right for context menus.',
+        inputSchema: { ...target, element_index: idx.optional(), x: z.number().optional(), y: z.number().optional(), click_count: z.number().optional(), mouse_button: z.enum(['left', 'right', 'middle']).optional() }
       },
-      async (a) => ocuRun('click', a, true)
+      async (a) =>
+        winAction('click', a, 'click', {
+          ...(a.element_index !== undefined ? { element_index: Number(a.element_index) } : { x: a.x, y: a.y }),
+          click_count: a.click_count ?? 1,
+          mouse_button: a.mouse_button ?? 'left'
+        })
     )
     s.registerTool(
       'perform_secondary_action',
       {
-        description: 'Run a secondary action an element exposes in get_app_state (e.g. Expand, Collapse, ScrollIntoView, Toggle, Invoke).',
-        inputSchema: { app: z.string(), element_index: z.string(), action: z.string() }
+        description: 'Run a secondary action an element lists in get_app_state: Invoke, Toggle, Expand, Collapse, Select, ScrollIntoView, Scroll Up/Down, Raise.',
+        inputSchema: { ...target, element_index: idx, action: z.string() }
       },
-      async (a) => ocuRun('perform_secondary_action', a, true)
+      async (a) => winAction('secondary', a, 'perform_secondary_action', { element_index: Number(a.element_index), action: a.action })
     )
     s.registerTool(
       'set_value',
       {
-        description: 'Set the value of an editable element directly (text fields, sliders, combo boxes). Faster and more reliable than typing. Returns refreshed app state.',
-        inputSchema: { app: z.string(), element_index: z.string(), value: z.string() }
+        description: 'Replace the value of an editable element (text field, combo box, slider) by element_index. Falls back to click + select-all + typing for custom fields.',
+        inputSchema: { ...target, element_index: idx, value: z.string() }
       },
-      async (a) => ocuRun('set_value', a, true)
+      async (a) => winAction('set_value', a, 'set_value', { element_index: Number(a.element_index), value: a.value })
     )
     s.registerTool(
       'type_text',
       {
-        description: 'Type literal text into the focused control of the app (click or set focus on the field first, or use set_value).',
-        inputSchema: { app: z.string(), text: z.string() }
+        description: 'Type text into the focused control of the window (real Unicode keystrokes, any language/emoji). Click the field first if it is not focused. For multi-line/formatted content use jarvis_paste.',
+        inputSchema: { ...target, text: z.string() }
       },
-      async (a) => {
-        // our own Unicode keystrokes: the OCU text path is disabled for most apps and the clipboard route was layout-fragile
-        const g = await this.consent()
-        if (g) return g
-        const lp = this.loop('type_text', a, true)
-        if (lp) return lp
-        const ep = c.begin()
-        this.lastApp = a.app || this.lastApp
-        try {
-          await focusApp(a.app)
-          c.check(ep)
-          await typeText(a.text)
-        } catch (e: any) {
-          return err(String(e?.message || e))
-        }
-        return this.result(`typed ${a.text.length} characters. ${await foregroundNote()}`, true, 500)
-      }
+      async (a) => winAction('type', a, 'type_text', { text: a.text })
     )
     s.registerTool(
       'press_key',
       {
-        description: 'Press a key or chord in the app: "Return", "Tab", "ctrl+a", "alt+F4", "Up". (For media/volume keys and global shortcuts use jarvis_keys.)',
-        inputSchema: { app: z.string(), key: z.string() }
+        description: 'Press a key or chord in the window: "Return", "Tab", "Escape", "ctrl+a", "Control_L+Shift_L+t", "alt+F4", "Up", "Page_Down", "F5". For media/volume keys use jarvis_keys.',
+        inputSchema: { ...target, key: z.string() }
       },
-      async (a) => {
-        const g = await this.consent()
-        if (g) return g
-        const lp = this.loop('press_key', a, true)
-        if (lp) return lp
-        const ep = c.begin()
-        this.lastApp = a.app || this.lastApp
-        try {
-          await focusApp(a.app)
-          c.check(ep)
-          await h.win.call('keys', { keys: a.key })
-        } catch (e: any) {
-          return err(String(e?.message || e))
-        }
-        return this.result(`pressed ${a.key}. ${await foregroundNote()}`, true, 400)
-      }
+      async (a) => winAction('key', a, 'press_key', { key: a.key })
     )
     s.registerTool(
       'scroll',
       {
-        description: 'Scroll a scrollable element (element_index from get_app_state) up/down/left/right by a number of pages.',
-        inputSchema: { app: z.string(), element_index: z.string(), direction: z.enum(['up', 'down', 'left', 'right']), pages: z.number().optional() }
+        description: 'Scroll the window at x,y (screenshot coordinates; default the centre). scrollY > 0 scrolls down, < 0 up (pixels, ~100 per wheel notch); or give direction + pages.',
+        inputSchema: { ...target, x: z.number().optional(), y: z.number().optional(), scrollY: z.number().optional(), scrollX: z.number().optional(), direction: z.enum(['up', 'down', 'left', 'right']).optional(), pages: z.number().optional() }
       },
-      async (a) => ocuRun('scroll', a, true)
+      async (a) => {
+        const amount = (a.pages ?? 1) * 600
+        const sy = a.scrollY ?? (a.direction === 'down' ? amount : a.direction === 'up' ? -amount : 0)
+        const sx = a.scrollX ?? (a.direction === 'right' ? amount : a.direction === 'left' ? -amount : 0)
+        return winAction('scroll', a, 'scroll', { ...(a.x !== undefined ? { x: a.x, y: a.y } : {}), scrollY: sy || (sx ? 0 : 600), scrollX: sx })
+      }
     )
     s.registerTool(
       'drag',
       {
-        description: 'Drag from (from_x,from_y) to (to_x,to_y) in window pixel coordinates.',
-        inputSchema: { app: z.string(), from_x: z.number(), from_y: z.number(), to_x: z.number(), to_y: z.number() }
+        description: 'Drag from (from_x,from_y) to (to_x,to_y) in window screenshot coordinates (sliders, drag & drop, selecting).',
+        inputSchema: { ...target, from_x: z.number(), from_y: z.number(), to_x: z.number(), to_y: z.number() }
       },
-      async (a) => ocuRun('drag', a, true)
+      async (a) => winAction('drag', a, 'drag', { from_x: a.from_x, from_y: a.from_y, to_x: a.to_x, to_y: a.to_y })
+    )
+    s.registerTool(
+      'paste',
+      {
+        description: 'Paste text into the focused field of the window via the clipboard (restored afterwards) — best for long, multi-line or formatted content. format "html" pastes rich text (headings, lists, bold) into editors.',
+        inputSchema: { ...target, text: z.string(), format: z.enum(['text', 'html']).optional() }
+      },
+      async (a) => winAction('paste', a, 'paste', { text: a.text, format: a.format ?? 'text' })
     )
 
+    // ---- system controls: volume (master / per app), media, window placement, desktop -----------------------------------
+    s.registerTool(
+      'volume',
+      {
+        description:
+          'System volume. action: get | set (level 0-100) | up | down (step, default 10) | mute | unmute | apps (list apps playing sound with their own volume). Pass app ("Spotify", "Яндекс Музыка", "chrome") to change only that app.',
+        inputSchema: { action: z.enum(['get', 'set', 'up', 'down', 'mute', 'unmute', 'apps']), level: z.number().optional(), step: z.number().optional(), app: z.string().optional() }
+      },
+      async (a) => {
+        try {
+          const r = await h.win.call<any>('volume', a)
+          if (Array.isArray(r)) return text(r.length ? r.map((x) => `${x.app}: ${x.level}%${x.muted ? ' (muted)' : ''}`).join('\n') : 'no app is playing sound')
+          return text(`volume ${r.level}%${r.muted ? ' (muted)' : ''}`)
+        } catch (e: any) {
+          return err(String(e?.message || e))
+        }
+      }
+    )
+    s.registerTool(
+      'media',
+      { description: 'Media keys for whatever is playing (Spotify, YouTube, Яндекс Музыка…): play_pause, next, previous, stop.', inputSchema: { action: z.enum(['play_pause', 'next', 'previous', 'stop']) } },
+      async (a) => {
+        const k = { play_pause: 'playpause', next: 'nexttrack', previous: 'prevtrack', stop: 'stop' }[a.action]
+        await h.win.call('keys', { keys: k })
+        return text(`sent ${a.action}`)
+      }
+    )
+    s.registerTool(
+      'window_control',
+      {
+        description:
+          'Arrange a window: minimize | maximize | restore | close | focus | move (x,y) | resize (width,height) | center | snap_left | snap_right | snap_top | snap_bottom | topmost_on | topmost_off | next_monitor.',
+        inputSchema: {
+          ...target,
+          action: z.enum(['minimize', 'maximize', 'restore', 'close', 'focus', 'move', 'resize', 'center', 'snap_left', 'snap_right', 'snap_top', 'snap_bottom', 'topmost_on', 'topmost_off', 'next_monitor']),
+          x: z.number().optional(),
+          y: z.number().optional(),
+          width: z.number().optional(),
+          height: z.number().optional()
+        }
+      },
+      async (a) => {
+        const g = await this.consent()
+        if (g) return g
+        const lp = this.loop('window_control', a, true)
+        if (lp) return lp
+        const ep = c.begin()
+        try {
+          const w = await windowFor(a, ep)
+          const r = await h.win.call<any>('window_control', { window: w.id, action: a.action, x: a.x, y: a.y, width: a.width, height: a.height })
+          return text(r?.closed ? `closed "${w.title}"` : `${a.action}: "${r.title}" now at ${r.x},${r.y} ${r.w}×${r.h}${r.minimized ? ' (minimized)' : ''}`)
+        } catch (e: any) {
+          return err(String(e?.message || e))
+        }
+      }
+    )
+    s.registerTool(
+      'desktop',
+      {
+        description: 'Desktop and screen: show_desktop (minimise all windows) | restore_all | lock (lock the PC) | screen_off | brightness (level 0-100, laptops).',
+        inputSchema: { action: z.enum(['show_desktop', 'restore_all', 'lock', 'screen_off', 'brightness']), level: z.number().optional() }
+      },
+      async (a) => {
+        if (a.action !== 'brightness') {
+          const g = await this.consent()
+          if (g) return g
+        }
+        try {
+          const r = await h.win.call<any>('desktop', a, 20000)
+          return text(typeof r === 'string' ? r : `brightness ${r}%`)
+        } catch (e: any) {
+          return err(String(e?.message || e))
+        }
+      }
+    )
 
     s.registerTool(
       'wait',

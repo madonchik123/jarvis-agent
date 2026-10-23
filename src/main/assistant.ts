@@ -2,7 +2,7 @@ import { EventEmitter } from 'events'
 import { app, screen } from 'electron'
 import { join } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { spawn } from 'child_process'
 import { DEFAULT_SETTINGS } from '../shared/types'
 import type { AppStatus, AssistantState, ChatItem, HighlightTarget, PermissionRequest, Routine, RoutineStep, ToolEvent } from '../shared/types'
@@ -10,12 +10,13 @@ import { phraseScore, normalize } from '../shared/textmatch'
 import { SettingsStore, MemoryStore, RoutineStore, ThreadStore, dataDir } from './store'
 import { Opencode } from './opencode'
 import { JarvisMcp, Hub } from './mcp'
-import { WinBridge } from './win'
+import { WinBridge, hasNative } from './win'
 import { SpeechEngine, SpeechEvent } from './speech/engine'
 import { Tts, splitSentences, detectLang, speakable } from './tts'
 import { Overlay } from './overlay'
 import { XttsSidecar } from './xtts'
 import { buildSystemExtra } from './agent-prompt'
+import { matchFast } from './fast-commands'
 import { pathsFor } from './models'
 
 let idSeq = 0
@@ -38,7 +39,8 @@ export class Assistant extends EventEmitter implements Hub {
   readonly routines = new RoutineStore()
   readonly threads = new ThreadStore()
   readonly win = new WinBridge()
-  readonly scanWin = new WinBridge()
+  /** the native helper serves requests concurrently, so one process does both jobs; the PowerShell fallback needs a second one */
+  readonly scanWin = hasNative() ? this.win : new WinBridge()
   readonly overlay = new Overlay()
   private grantedThreads = new Set<string>()
   readonly tmpDir = join(app.getPath('temp'), 'jarvis')
@@ -71,6 +73,8 @@ export class Assistant extends EventEmitter implements Hub {
   private controlPrompt: Promise<boolean> | null = null
   private seenTools = new Set<string>()
   private stepCount = 0
+  private liveSteps: NonNullable<AppStatus['steps']> = []
+  private turnStartedAt = 0
   private lastItem: { kind: string; text?: string } = { kind: '' }
   private turnErrored = false
   private nudges = 0
@@ -94,7 +98,7 @@ export class Assistant extends EventEmitter implements Hub {
       { piperExe: pathsFor(base).piperExe, voice: (id) => pathsFor(base).voice(id) },
       join(this.tmpDir, 'tts'),
       this.xtts,
-      () => ({ apiKey: this.settings().fishApiKey.trim(), model: this.settings().fishModel.trim() || 's2.1-pro-free', voiceRu: this.settings().fishVoiceRu.trim() || DEFAULT_SETTINGS.fishVoiceRu, voiceEn: this.settings().fishVoiceEn.trim() || DEFAULT_SETTINGS.fishVoiceEn })
+      () => ({ mode: this.settings().voiceMode, serverUrl: this.settings().ttsServerUrl.trim() || DEFAULT_SETTINGS.ttsServerUrl, installId: this.settings().installId, apiKey: this.settings().fishApiKey.trim(), model: this.settings().fishModel.trim() || 's2.1-pro-free', voiceRu: this.settings().fishVoiceRu.trim() || DEFAULT_SETTINGS.fishVoiceRu, voiceEn: this.settings().fishVoiceEn.trim() || DEFAULT_SETTINGS.fishVoiceEn })
     )
     this.xtts.idleMinutes = this.settings().cloneIdleMinutes
     this.xtts.on('state', (st) => {
@@ -116,6 +120,15 @@ export class Assistant extends EventEmitter implements Hub {
       const hasParakeet = existsSync(pathsFor(dataDir()).parakeetDir)
       this.settingsStore.set({ sttV2: true, ...(hasParakeet ? { sttModel: 'parakeet-en' as const } : {}) })
     }
+    // one-time: name this installation (free voice server limits) and pick the voice source from what was configured before
+    {
+      const f = this.settings()
+      if (!f.installId) this.settingsStore.set({ installId: randomUUID() })
+      if (!f.voiceModeSet) {
+        const mode = f.voiceRu.startsWith('fish:') ? (f.fishApiKey ? 'custom' : 'server') : 'local'
+        this.settingsStore.set({ voiceModeSet: true, voiceMode: mode })
+      }
+    }
     // a Fish Audio key with voice ids configured: make Fish the speaking voice (still switchable in Settings)
     {
       const f = this.settings()
@@ -125,7 +138,9 @@ export class Assistant extends EventEmitter implements Hub {
     }
     // first run with the cloned-voice engine installed: make it the default voice (still switchable in Settings)
     if (this.xtts.available() && !this.settings().cloneOffered) {
-      this.settingsStore.set({ cloneOffered: true, voiceRu: 'xtts:jarvis', voiceEn: 'xtts:jarvis' })
+      // only switches when the user already chose local voices; the free server stays the default otherwise
+      const local = this.settings().voiceMode === 'local'
+      this.settingsStore.set({ cloneOffered: true, ...(local ? { voiceRu: 'xtts:jarvis', voiceEn: 'xtts:jarvis' } : {}) })
     }
     this.opencode = new Opencode(() => this.settings(), { mcpUrl: this.mcp.url, mcpToken: this.mcp.token }, this.threads)
     this.opencode.on('reset', () => this.emit('chatReset'))
@@ -153,6 +168,8 @@ export class Assistant extends EventEmitter implements Hub {
       this.lastAssistantText = ''
       this.seenTools.clear()
       this.stepCount = 0
+      this.liveSteps = []
+      this.turnStartedAt = Date.now()
       this.turnErrored = false
       this.lastItem = { kind: '' }
       this.lastSpeechAt = Date.now()
@@ -160,6 +177,8 @@ export class Assistant extends EventEmitter implements Hub {
       this.setState('thinking')
     })
     this.opencode.on('turnEnd', () => {
+      this.liveSteps = []
+      this.turnStartedAt = 0
       this.setActivity('')
       if (this.shouldContinue()) {
         void this.continueTurn()
@@ -208,6 +227,8 @@ export class Assistant extends EventEmitter implements Hub {
       clone: this.xtts.state,
       message: this.bannerMessage || undefined,
       activity: this.activity || undefined,
+      steps: this.liveSteps.length ? this.liveSteps : undefined,
+      turnStartedAt: this.turnStartedAt || undefined,
       controlling: this.controlOn
     }
   }
@@ -236,6 +257,7 @@ export class Assistant extends EventEmitter implements Hub {
         this.emit('partial', e.text)
         break
       case 'wake':
+        void this.opencode.wake() // the agent may be unloaded while idle: start it while the user is still talking
         this.onWake()
         break
       case 'wakeRejected':
@@ -446,6 +468,21 @@ export class Assistant extends EventEmitter implements Hub {
       this.emit('chat', { id: uid(), kind: 'system', text: '✦ New conversation', at: Date.now() } satisfies ChatItem)
       void this.say(/[а-яё]/.test(quick) ? 'Начинаем с чистого листа, сэр.' : 'A clean slate, sir.')
       return
+    }
+
+    // instant commands (volume, media keys, desktop) never wait for the model
+    const fast = matchFast(text)
+    if (fast) {
+      try {
+        if (fast.kind === 'volume') await this.win.call('volume', { action: fast.action, level: fast.level, step: fast.step })
+        else if (fast.kind === 'media') await this.win.call('keys', { keys: { play_pause: 'playpause', next: 'nexttrack', previous: 'prevtrack' }[fast.action] })
+        else await this.win.call('desktop', { action: fast.action })
+        this.emit('chat', { id: uid(), kind: 'system', text: '⚡ ' + fast.say[this.lastLang === 'ru' ? 0 : 1], at: Date.now() } satisfies ChatItem)
+        if (via === 'voice' && fast.kind !== 'media') void this.say(fast.say[this.lastLang === 'ru' ? 0 : 1])
+        return
+      } catch (e: any) {
+        console.warn('[fast] failed, falling back to the agent:', e?.message || e)
+      }
     }
 
     await this.autoThread()
@@ -832,6 +869,16 @@ export class Assistant extends EventEmitter implements Hub {
   private onTool(t: ToolEvent) {
     const name = t.tool.replace(/^jarvis_/, '')
     if (name === 'say' || name === 'ask') return
+    // keep a short rolling list of what is being done, for the live step view
+    {
+      const label = this.toolLabel(name, t).replace(/…(\s·.*)?$/, '').replace(/\s·\sшаг\s\d+$|\s·\sstep\s\d+$/, '')
+      const status = t.status === 'completed' ? 'done' : t.status === 'error' ? 'fail' : 'run'
+      const i = this.liveSteps.findIndex((x) => x.id === t.id)
+      const step = { id: t.id, label, status: status as 'run' | 'done' | 'fail', ms: t.ms }
+      if (i >= 0) this.liveSteps[i] = step
+      else this.liveSteps = [...this.liveSteps, step].slice(-6)
+      this.emitStatus()
+    }
     if (t.status === 'running' || t.status === 'pending') {
       if (t.status === 'running' && !this.seenTools.has(t.id)) this.stepCount++
       this.setActivity(this.toolLabel(name, t))
@@ -900,6 +947,16 @@ export class Assistant extends EventEmitter implements Hub {
       edit: q('Правлю файл', 'Editing', clip(String(i.filePath || i.path || '').split(/[\\/]/).pop(), 30)),
       glob: ['Ищу файлы', 'Searching for files'],
       grep: q('Ищу в файлах', 'Searching files', clip(i.pattern, 30)),
+      paste: ['Вставляю текст', 'Pasting text'],
+      window_control: q(i.action === 'close' ? 'Закрываю окно' : i.action === 'minimize' ? 'Сворачиваю окно' : i.action === 'maximize' ? 'Разворачиваю окно' : 'Расставляю окно', i.action === 'close' ? 'Closing the window' : i.action === 'minimize' ? 'Minimising the window' : i.action === 'maximize' ? 'Maximising the window' : 'Arranging the window', app),
+      volume: q('Громкость', 'Volume', i.level != null ? String(i.level) + '%' : String(i.action || '')),
+      media: ['Управляю плеером', 'Controlling playback'],
+      desktop: ['Рабочий стол', 'Desktop'],
+      sequence: ['Выполняю последовательность действий', 'Running an input sequence'],
+      mouse: ['Управляю мышью', 'Using the mouse'],
+      hold_key: q('Удерживаю клавишу', 'Holding a key', clip(i.keys, 12)),
+      scroll_at: ['Прокручиваю', 'Scrolling'],
+      type: q('Печатаю', 'Typing', i.text ? `«${clip(i.text, 30)}»` : ''),
       remember: ['Запоминаю', 'Remembering'],
       recall: ['Вспоминаю', 'Recalling'],
       forget: ['Забываю', 'Forgetting'],
@@ -939,7 +996,57 @@ export class Assistant extends EventEmitter implements Hub {
   }
 
   private async runStep(step: RoutineStep): Promise<string> {
+    const r = await this.runStepInner(step)
+    if (step.after) await new Promise((res) => setTimeout(res, Math.min(step.after!, 60000)))
+    return r
+  }
+
+  private async runStepInner(step: RoutineStep): Promise<string> {
+    const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms))
     switch (step.type) {
+      case 'focus':
+        await this.win.call('focus', { title: step.target })
+        return 'focused ' + step.target
+      case 'click': {
+        let x = step.x ?? 0
+        let y = step.y ?? 0
+        if (step.text) {
+          const c = this.mcp.computer
+          let hit = c.find(step.text, await c.scan({}), true).filter((m) => m.score >= 0.7)[0]
+          if (!hit) {
+            await sleep(600)
+            hit = c.find(step.text, await c.scan({}), true).filter((m) => m.score >= 0.7)[0]
+          }
+          if (!hit) throw new Error(`"${step.text}" is not on screen`)
+          x = Math.round(hit.rect.x + hit.rect.w / 2)
+          y = Math.round(hit.rect.y + hit.rect.h / 2)
+        }
+        await this.win.call('click', { x, y, button: step.button ?? 'left', count: step.count ?? 1 })
+        return `clicked ${x},${y}`
+      }
+      case 'move':
+        await this.win.call('move', { x: step.x, y: step.y })
+        return 'moved'
+      case 'scroll': {
+        const n = Math.max(1, Math.min(60, step.amount))
+        await this.win.call('scroll', { ...(step.x !== undefined ? { x: step.x, y: step.y } : {}), dy: step.direction === 'down' ? n : step.direction === 'up' ? -n : 0, dx: step.direction === 'right' ? n : step.direction === 'left' ? -n : 0 })
+        return 'scrolled'
+      }
+      case 'hold': {
+        await this.win.call('keydown', { keys: step.keys, scan: !!step.scan })
+        try {
+          const t0 = Date.now()
+          await sleep(Math.min(400, step.ms))
+          // auto-repeat like a held physical key
+          while (Date.now() - t0 < Math.min(step.ms, 20000)) {
+            await this.win.call('keydown', { keys: step.keys, scan: !!step.scan })
+            await sleep(35)
+          }
+        } finally {
+          await this.win.call('keyup', { keys: step.keys, scan: !!step.scan }).catch(() => {})
+        }
+        return 'held ' + step.keys
+      }
       case 'say':
         await this.say(step.text)
         return 'said'
@@ -949,10 +1056,10 @@ export class Assistant extends EventEmitter implements Hub {
       case 'run':
         return (await this.powershell(step.command)).slice(0, 400) || 'ran'
       case 'keys':
-        await this.win.call('keys', { keys: step.keys })
+        await this.win.call('keys', { keys: step.keys, scan: !!step.scan })
         return 'keys'
       case 'type':
-        await this.win.call('type', { text: step.text })
+        await this.win.call('type', { text: step.text, char_delay: step.charDelay ?? 4 })
         return 'typed'
       case 'wait':
         await new Promise((r) => setTimeout(r, Math.min(step.ms, 60000)))
@@ -1023,6 +1130,8 @@ function psQuote(s: string) {
 }
 
 function wavMillis(wav: Buffer): number {
+  // mp3 from the free voice server (64 kbit/s)
+  if (wav.toString('ascii', 0, 3) === 'ID3' || (wav[0] === 0xff && (wav[1] & 0xe0) === 0xe0)) return Math.round((wav.length / 8000) * 1000)
   try {
     const rate = wav.readUInt32LE(24)
     const bytes = wav.readUInt32LE(40) || wav.length - 44

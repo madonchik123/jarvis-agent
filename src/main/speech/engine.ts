@@ -27,7 +27,7 @@ interface Job {
 }
 
 /** The big recognisers exit after this long without work, returning ~550 MB to the OS. */
-const CHILD_IDLE_MS = Number(process.env.JARVIS_ASR_IDLE_MS) || 120_000
+const CHILD_IDLE_MS = Number(process.env.JARVIS_ASR_IDLE_MS) || 60_000
 
 /**
  * Two parts:
@@ -36,6 +36,7 @@ const CHILD_IDLE_MS = Number(process.env.JARVIS_ASR_IDLE_MS) || 120_000
  */
 export class SpeechEngine extends EventEmitter {
   private worker: Worker | null = null
+  private mode: 'wake' | 'command' = 'wake'
   private child: ChildProcess | null = null
   private childReady = false
   private childIdle: NodeJS.Timeout | null = null
@@ -82,7 +83,10 @@ export class SpeechEngine extends EventEmitter {
     w.on('message', (m: any) => {
       if (m.type === 'ready') this.ready = true
       if (m.type === 'job') return this.enqueue(m)
-      if (m.type === 'speech' && m.on) this.ensureChild() // warm the recognisers while the user is still talking
+      if (m.type === 'mode') this.mode = m.mode
+      // load the recognisers only when a command is coming (wake word heard, or a follow-up window is open) —
+      // not for every sound the microphone picks up (videos, music, other people)
+      if (m.type === 'wake' || (m.type === 'speech' && m.on && this.mode === 'command')) this.ensureChild()
       this.emit('event', m)
     })
     w.on('error', (e) => this.emit('event', { type: 'error', error: String(e) }))

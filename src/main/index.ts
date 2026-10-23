@@ -1,13 +1,16 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, screen, session, shell, Tray, desktopCapturer } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, nativeImage, screen, session, shell, Tray, desktopCapturer, net } from 'electron'
 import { join } from 'path'
 import { existsSync, writeFileSync } from 'fs'
-import { IPC, type Settings, type SetupProgress } from '../shared/types'
+import { IPC, DEFAULT_SETTINGS, type Settings, type SetupProgress } from '../shared/types'
 import { Assistant } from './assistant'
 import { dataDir } from './store'
 import { listAssets, installAsset } from './models'
 import { rendererUrl, preloadPath, resourcePath } from './paths'
 import { initLogging, logDir } from './log'
+import { Updater } from './updater'
 
+// promo capture / tests: run with a throw-away profile so the real data is never touched
+if (process.env.JARVIS_USERDATA) app.setPath('userData', process.env.JARVIS_USERDATA)
 if (!app.requestSingleInstanceLock()) {
   app.quit()
   process.exit(0)
@@ -16,15 +19,21 @@ app.setName('Jarvis')
 initLogging()
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 app.commandLine.appendSwitch('js-flags', '--expose-gc') // lets the speech worker hand model memory back when idle
+// memory: GPU, network and audio services run inside the main process instead of three extra processes,
+// and windows of the same site (main, HUD, overlays) share one renderer process
+app.commandLine.appendSwitch('in-process-gpu')
+app.commandLine.appendSwitch('enable-features', 'NetworkServiceInProcess')
+app.commandLine.appendSwitch('disable-features', 'AudioServiceOutOfProcess,SpareRendererForSitePerProcess,CalculateNativeWinOcclusion')
+app.commandLine.appendSwitch('process-per-site')
 
 let assistant: Assistant
 let mainWin: BrowserWindow | null = null
 let hudWin: BrowserWindow | null = null
-let audioWin: BrowserWindow | null = null
 let tray: Tray | null = null
+const updater = new Updater()
 let quitting = false
 
-const all = () => [mainWin, hudWin, audioWin].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
+const all = () => [mainWin, hudWin].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
 const broadcast = (ch: string, ...args: unknown[]) => all().forEach((w) => w.webContents.send(ch, ...args))
 const toUi = (ch: string, ...args: unknown[]) => [mainWin, hudWin].forEach((w) => w && !w.isDestroyed() && w.webContents.send(ch, ...args))
 
@@ -35,9 +44,11 @@ function iconImage() {
 
 function createMain() {
   const s = assistant.settings()
+  const promo = !!process.env.JARVIS_PROMO // off-screen rendering for the promo video (src/main/promo.ts)
   mainWin = new BrowserWindow({
-    width: 1180,
-    height: 760,
+    width: promo ? 1080 : 1180,
+    height: promo ? 1920 : 760,
+    useContentSize: promo,
     minWidth: 900,
     minHeight: 600,
     show: false,
@@ -45,7 +56,7 @@ function createMain() {
     backgroundColor: '#05080d',
     title: 'Jarvis',
     icon: iconImage(),
-    webPreferences: { preload: preloadPath(), backgroundThrottling: false }
+    webPreferences: { preload: preloadPath(), backgroundThrottling: false, offscreen: promo }
   })
   mainWin.on('ready-to-show', () => {
     if (!s.startMinimized) mainWin?.show()
@@ -64,28 +75,53 @@ function createMain() {
   void mainWin.loadURL(rendererUrl('index.html'))
 }
 
+/** Windows drops TOPMOST on a window when its style flags change (focusable / click-through) or when another topmost window
+ *  (video players, games, taskbar thumbnails) is raised: re-assert it at the highest level every time the HUD is touched. */
+function raiseHud() {
+  if (!hudWin || hudWin.isDestroyed() || !hudWin.isVisible()) return
+  hudWin.setAlwaysOnTop(true, 'screen-saver')
+  hudWin.moveTop()
+}
+
+let hudSig = ''
 function syncHud() {
   if (!hudWin || hudWin.isDestroyed()) return
-  // never draw the HUD on top of the main window: hide it only while the two rectangles intersect
   // permission cards must always be reachable: grow the HUD, make it clickable, and keep it visible
   if (pendingPerms.size > 0) {
-    hudWin.setBounds(hudBounds(assistant.settings().hudCorner, 200 * pendingPerms.size))
-    hudWin.setIgnoreMouseEvents(false)
-    hudWin.setFocusable(true)
+    const sig = 'perm' + pendingPerms.size + assistant.settings().hudCorner
+    if (sig !== hudSig) {
+      hudSig = sig
+      hudWin.setBounds(hudBounds(assistant.settings().hudCorner, 200 * pendingPerms.size))
+      hudWin.setIgnoreMouseEvents(false)
+      hudWin.setFocusable(true)
+    }
     if (!hudWin.isVisible()) hudWin.showInactive()
+    raiseHud()
     return
   }
-  hudWin.setBounds(hudBounds(assistant.settings().hudCorner))
-  hudWin.setFocusable(false)
-  hudWin.setIgnoreMouseEvents(true, { forward: true })
+  // normal mode: only touch the window when something changed (every style change risks losing TOPMOST)
+  const sig = 'idle' + assistant.settings().hudCorner
+  if (sig !== hudSig) {
+    hudSig = sig
+    hudWin.setBounds(hudBounds(assistant.settings().hudCorner))
+    hudWin.setFocusable(false)
+    hudWin.setIgnoreMouseEvents(true, { forward: true })
+  }
+  // the HUD would sit on top of the main window while the user is looking at it: hide it only then — i.e. when the main
+  // window is the focused one and the two rectangles intersect (a main window hidden behind other apps must not hide the HUD)
   let overlaps = false
-  if (mainWin && !mainWin.isDestroyed() && mainWin.isVisible() && !mainWin.isMinimized()) {
+  if (mainWin && !mainWin.isDestroyed() && mainWin.isVisible() && !mainWin.isMinimized() && mainWin.isFocused()) {
     const a = mainWin.getBounds()
     const b = hudWin.getBounds()
     overlaps = a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
   }
-  if (overlaps) hudWin.hide()
-  else if (!hudWin.isVisible()) hudWin.showInactive()
+  if (process.env.JARVIS_DEBUG_HUD) console.log('[hud]', JSON.stringify({ overlaps, visible: hudWin.isVisible(), mainFocused: !!mainWin && !mainWin.isDestroyed() && mainWin.isFocused(), mainVisible: !!mainWin && !mainWin.isDestroyed() && mainWin.isVisible(), bounds: hudWin.getBounds(), onTop: hudWin.isAlwaysOnTop() }))
+  if (overlaps) {
+    if (hudWin.isVisible()) hudWin.hide()
+  } else {
+    if (!hudWin.isVisible()) hudWin.showInactive()
+    raiseHud()
+  }
 }
 
 const pendingPerms = new Set<string>()
@@ -113,21 +149,25 @@ function createHud() {
     show: false,
     webPreferences: { preload: preloadPath(), backgroundThrottling: false }
   })
-  hudWin.setAlwaysOnTop(true, 'floating')
+  hudWin.setAlwaysOnTop(true, 'screen-saver')
   hudWin.setIgnoreMouseEvents(true, { forward: true })
   hudWin.once('ready-to-show', syncHud)
-  void hudWin.loadURL(rendererUrl('hud.html'))
+  // keep it visible and on top: re-assert periodically (fullscreen apps and other topmost windows push it down), and follow
+  // monitor changes (unplugged display, resolution / scaling change would leave it off-screen)
+  setInterval(() => {
+    if (!hudWin || hudWin.isDestroyed()) return
+    if (!hudWin.isVisible() || hudWin.isMinimized()) return syncHud()
+    raiseHud()
+  }, 2000)
+  for (const ev of ['display-added', 'display-removed', 'display-metrics-changed'] as const)
+    screen.on(ev as any, () => {
+      hudSig = ''
+      syncHud()
+    })
+  hudWin.on('hide', () => setTimeout(syncHud, 400)) // never stay hidden while nothing justifies it
+  void hudWin.loadURL(rendererUrl('hud.html') + (process.env.JARVIS_PROMO ? '?noaudio=1' : '')) // promo capture must never listen to the room
 }
 
-function createAudioHost() {
-  audioWin = new BrowserWindow({
-    show: false,
-    width: 200,
-    height: 120,
-    webPreferences: { preload: preloadPath(), backgroundThrottling: false }
-  })
-  void audioWin.loadURL(rendererUrl('audio.html'))
-}
 
 function showMain() {
   if (!mainWin || mainWin.isDestroyed()) createMain()
@@ -187,9 +227,13 @@ function applySettings(patch: Partial<Settings>) {
   if (patch.apiKey !== undefined && patch.apiKey !== before.apiKey) void assistant.opencode.applyAuth().then(() => assistant.opencode.listModels(true))
   if ((patch.permissionMode && patch.permissionMode !== before.permissionMode) || (patch.cwd !== undefined && patch.cwd !== before.cwd) || (patch.customProvider && JSON.stringify(patch.customProvider) !== JSON.stringify(before.customProvider)) || (patch.connectors && JSON.stringify(patch.connectors) !== JSON.stringify(before.connectors)))
     void assistant.opencode.restart()
+  if (patch.autoUpdate) updater.setMode(patch.autoUpdate)
   if (patch.hotkey !== undefined) registerHotkey()
   if (patch.autoStart !== undefined) applyAutoStart()
-  if (patch.hudCorner) hudWin?.setBounds(hudBounds(patch.hudCorner))
+  if (patch.hudCorner) {
+    hudSig = ''
+    syncHud()
+  }
   if (patch.cloneIdleMinutes !== undefined) assistant.xtts.idleMinutes = patch.cloneIdleMinutes
   if ('fishApiKey' in patch || 'fishVoiceRu' in patch || 'fishVoiceEn' in patch || 'fishModel' in patch) {
     assistant.resetFishState()
@@ -254,6 +298,11 @@ function wireIpc() {
   ipcMain.handle('app:openLogs', () => shell.openPath(logDir()))
   // only ever opens plain https links (key pages) in the user's browser
   ipcMain.handle('app:openUrl', (_e, url: string) => (/^https:\/\//.test(String(url)) ? shell.openExternal(url) : undefined))
+  ipcMain.handle('update:state', () => updater.state)
+  ipcMain.handle('update:check', () => updater.check(false))
+  ipcMain.handle('update:download', () => updater.download())
+  ipcMain.handle('update:install', () => updater.install())
+  ipcMain.handle('agent:wake', () => assistant.opencode.wake())
   ipcMain.handle('connectors:status', () => assistant.opencode.mcpStatus())
   ipcMain.handle('connectors:auth', (_e, id: string) => assistant.opencode.mcpAuthenticate(String(id)))
   ipcMain.handle('connectors:reconnect', async (_e, id: string) => {
@@ -264,7 +313,19 @@ function wireIpc() {
     await assistant.opencode.mcpSignOut(String(id))
     return assistant.opencode.mcpStatus()
   })
-  ipcMain.handle('providers:list', () => assistant.opencode.providers())
+  ipcMain.handle('voice:serverHealth', async () => {
+    try {
+      const base = (assistant.settings().ttsServerUrl || DEFAULT_SETTINGS.ttsServerUrl).replace(/\/+$/, '')
+      const r = await net.fetch(base + '/api/health', { signal: AbortSignal.timeout(8000) })
+      return await r.json()
+    } catch (e: any) {
+      return { ok: false, notice: '' }
+    }
+  })
+  ipcMain.handle('providers:list', async () => {
+    await assistant.opencode.wake()
+    return assistant.opencode.providers()
+  })
   ipcMain.handle('providers:connect', async (_e, id: string, key: string) => {
     await assistant.opencode.connectProvider(id, key)
     return true
@@ -308,7 +369,7 @@ function wireIpc() {
     const lang = /[а-яё]/i.test(text) ? 'ru' : 'en'
     const wav = await assistant.tts.synth(text, voice, assistant.settings().voiceSpeed, lang)
     toUi('noop')
-    audioWin?.webContents.send(IPC.ttsPlay, { id: 'preview-' + Date.now(), wav, fx: assistant.settings().voiceFx, volume: assistant.settings().voiceVolume })
+    hudWin?.webContents.send(IPC.ttsPlay, { id: 'preview-' + Date.now(), wav, fx: assistant.settings().voiceFx, volume: assistant.settings().voiceVolume })
   })
   ipcMain.handle('ocr:langs', async () => {
     try {
@@ -357,10 +418,11 @@ function wireAssistantEvents() {
   })
   assistant.on('subtitle', (t: string) => toUi(IPC.subtitle, t))
   assistant.on('partial', (t: string) => toUi(IPC.transcript, t))
-  assistant.on('play', (req) => audioWin?.webContents.send(IPC.ttsPlay, req))
-  assistant.on('stopPlayback', () => audioWin?.webContents.send(IPC.ttsStop))
-  assistant.on('wake', () => audioWin?.webContents.send('audio:earcon', 'wake'))
-  assistant.on('earcon', (kind: string) => audioWin?.webContents.send('audio:earcon', kind))
+  // the HUD window also hosts the microphone and speech playback (one renderer process less)
+  assistant.on('play', (req) => hudWin?.webContents.send(IPC.ttsPlay, req))
+  assistant.on('stopPlayback', () => hudWin?.webContents.send(IPC.ttsStop))
+  assistant.on('wake', () => hudWin?.webContents.send('audio:earcon', 'wake'))
+  assistant.on('earcon', (kind: string) => hudWin?.webContents.send('audio:earcon', kind))
 }
 
 async function debugPrompts(list: string[]) {
@@ -460,33 +522,20 @@ app.whenReady().then(async () => {
   assistant = new Assistant()
   wireIpc()
   wireAssistantEvents()
-  createAudioHost()
   createMain()
   createHud()
   buildTray()
   registerHotkey()
   applyAutoStart()
   await assistant.init()
+  updater.init(assistant.settings().autoUpdate)
+  updater.on('state', (st) => broadcast('update:changed', st))
   if (process.env.JARVIS_TEST_WAIT) {
     await new Promise((r) => setTimeout(r, 4000))
     const c = assistant.mcp.computer
     const t0 = Date.now()
     const r = await c.waitStable({ timeoutSec: 12, epoch: c.begin() })
     console.log(`[wait-test] stable=${r.stable} waited=${r.waitedMs}ms total=${Date.now() - t0}ms title="${r.title}"`)
-  }
-  if (process.env.JARVIS_TEST_OCU) {
-    await new Promise((r) => setTimeout(r, 3000))
-    try {
-      const t0 = Date.now()
-      const apps = await assistant.mcp.ocu.call('list_apps', {})
-      console.log(`[ocu-test] list_apps ${Date.now() - t0}ms: ${apps.text.split(String.fromCharCode(10)).length} lines`)
-      const t1 = Date.now()
-      const st = await assistant.mcp.ocu.call('get_app_state', { app: process.env.JARVIS_TEST_OCU, max_tree_nodes: 200, text_limit: 200 })
-      console.log(`[ocu-test] get_app_state ${Date.now() - t1}ms: ${st.text.length} chars, image=${!!st.image}, err=${st.isError}`)
-      console.log('[ocu-test] head:', st.text.split(String.fromCharCode(10)).slice(0, 6).join(' | ').slice(0, 400))
-    } catch (e: any) {
-      console.log('[ocu-test] FAILED', e.message)
-    }
   }
   if (process.env.JARVIS_FEED) {
     // feed 16 kHz mono wav files through the real engine (worker + ASR child) and log what comes out
@@ -549,6 +598,7 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 1200))
     writeFileSync(join(process.env.JARVIS_NARROW, 'drawer.png'), (await mainWin!.webContents.capturePage()).toPNG())
   }
+  if (process.env.JARVIS_PROMO) void import('./promo').then((m) => m.runPromo({ win: () => mainWin!, assistant, out: process.env.JARVIS_PROMO! }))
   if (process.env.JARVIS_SHOTS) void debugShots(process.env.JARVIS_SHOTS)
   if (process.env.JARVIS_PROMPTS) void debugPrompts(JSON.parse(process.env.JARVIS_PROMPTS))
 })

@@ -23,7 +23,9 @@ interface InitMsg {
 
 const SR = 16000
 const PREROLL = Math.floor(SR * 0.5)
-const MAX_UTTERANCE = SR * 28
+// GigaAM decodes a minute of speech in one pass with no loss (benchmarked: 62 s, 99% identical to per-sentence), so long
+// dictation is only limited by the timeout below
+const MAX_UTTERANCE = SR * 75
 
 let vad: any = null
 let wakeRec: any = null
@@ -75,7 +77,7 @@ function init(m: InitMsg) {
     wakeEnabled = m.wakeEnabled
     vad = new sherpa.Vad(
       {
-        sileroVad: { model: m.vad, threshold: 0.45, minSilenceDuration: 0.6, minSpeechDuration: 0.2, windowSize: 512, maxSpeechDuration: 28 },
+        sileroVad: { model: m.vad, threshold: 0.45, minSilenceDuration: 0.6, minSpeechDuration: 0.2, windowSize: 512, maxSpeechDuration: 75 },
         sampleRate: SR,
         numThreads: 1,
         debug: false
@@ -107,7 +109,7 @@ function setMode(next: Mode, timeoutMs = 0, silent = false) {
   modeTimer = null
   if (next === 'command' && timeoutMs > 0) {
     // Silence window: give up after `timeoutMs` without speech — but never cut the user off mid-sentence.
-    const hardStop = Date.now() + timeoutMs + 9000 // an utterance that never ends (noise/music) must not hold us forever
+    const hardStop = Date.now() + timeoutMs + 70_000 // an utterance that never ends (noise/music) must not hold us forever
     const expire = () => {
       if (inSpeech && Date.now() < hardStop) {
         modeTimer = setTimeout(expire, 400)
@@ -213,9 +215,12 @@ function onAudio(samples: Float32Array) {
       speechChunks++
       const quiet = peak > 0.02 && e < Math.max(0.006, peak * 0.2)
       quietRun = quiet ? quietRun + 1 : 0
-      const endMs = mode === 'command' ? 850 : 1150
-      const longEnough = speechChunks * CHUNK_MS > 700
-      const cap = mode === 'command' ? 11_000 : 12_000
+      // Adaptive patience: a short command ends quickly (low latency), while someone dictating a long request is given room
+      // to breathe between clauses. The wake word / short phrases end sooner than free speech.
+      const uttMs = speechChunks * CHUNK_MS
+      const endMs = mode === 'command' ? Math.min(1500, 650 + uttMs * 0.07) : Math.min(1000, 750 + uttMs * 0.05)
+      const longEnough = uttMs > 600
+      const cap = mode === 'command' ? 70_000 : 12_000
       if ((quietRun * CHUNK_MS >= endMs && longEnough) || uttLen > (cap / 1000) * SR) {
         forceEnd()
         continue

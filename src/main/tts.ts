@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs'
 import { join, dirname } from 'path'
 import { EventEmitter } from 'events'
 import type { XttsSidecar } from './xtts'
-import { fishSynth, type FishConfig } from './fish'
+import { fishSynth, serverSynth, type FishConfig } from './fish'
 
 /**
  * Persistent Piper processes (one per voice). Piper in --json-input mode reads a JSON line per
@@ -102,15 +102,21 @@ export class Tts extends EventEmitter {
   available(voiceId: string) {
     if (voiceId.startsWith('fish:')) {
       const f = this.fish?.()
-      return !!f?.apiKey && !!(voiceId === 'fish:en' ? f.voiceEn : f.voiceRu)
+      if (!f || f.mode === 'local') return false
+      if (f.mode === 'server') return !!f.serverUrl
+      return !!f.apiKey && !!(voiceId === 'fish:en' ? f.voiceEn : f.voiceRu)
     }
     if (voiceId.startsWith('xtts:')) return !!this.xtts?.available()
     return existsSync(this.paths.piperExe) && existsSync(this.paths.voice(voiceId))
   }
 
-  /** Synthesise one sentence → returns wav bytes. */
+  /** Synthesise one sentence → returns audio bytes (wav, or mp3 from the free server). */
   async synth(text: string, voiceId: string, speed = 1, lang: 'ru' | 'en' = 'ru'): Promise<Buffer> {
-    if (voiceId.startsWith('fish:')) return fishSynth(this.fish!(), text, voiceId === 'fish:en' ? 'en' : 'ru', speed)
+    if (voiceId.startsWith('fish:')) {
+      const f = this.fish!()
+      const l = voiceId === 'fish:en' ? 'en' : 'ru'
+      return f.mode === 'server' ? serverSynth(f, text, l, speed) : fishSynth(f, text, l, speed)
+    }
     if (voiceId.startsWith('xtts:')) return this.xtts!.synth(text, lang, speed)
     let v = this.voices.get(voiceId)
     if (!v) {

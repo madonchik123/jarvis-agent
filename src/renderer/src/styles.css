@@ -1076,7 +1076,8 @@ button {
 }
 .step-edit {
   display: grid;
-  grid-template-columns: 110px 1fr 34px;
+  grid-template-columns: 158px 1fr 78px 30px 30px;
+  align-items: center;
   gap: 8px;
   margin-bottom: 8px;
 }
@@ -1180,6 +1181,17 @@ button {
   cursor: pointer;
   filter: drop-shadow(0 0 22px var(--accent-glow));
   transition: transform 0.3s var(--ease);
+  position: relative;
+}
+/* a dark disc behind the orb: the thin cyan rings stay readable on white / bright windows and light themes */
+.hud-orb::before {
+  content: '';
+  position: absolute;
+  inset: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(4, 10, 18, 0.78) 0%, rgba(4, 10, 18, 0.62) 62%, transparent 72%);
+  border: 1px solid var(--accent-line);
+  z-index: -1;
 }
 .hud-orb:hover {
   transform: scale(1.06);
@@ -1972,4 +1984,73 @@ button {
   .sbody .row .ctl {
     flex-basis: 60%;
   }
+}
+
+/* ---------------------------------------------------------------- live steps */
+.live-steps {
+  width: 100%;
+  max-width: 360px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: stretch;
+}
+.live-head {
+  display: flex;
+  justify-content: center;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.live-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 11px;
+  border-radius: 10px;
+  background: rgba(130, 180, 230, 0.06);
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--text-2);
+  min-width: 0;
+}
+.live-step span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-step em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.live-step.run {
+  color: var(--text);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+}
+.live-step.run svg {
+  color: var(--accent);
+}
+.live-step.done svg {
+  color: var(--ok);
+}
+.live-step.fail {
+  color: #ff9a8a;
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.assistant-page.narrow .live-steps {
+  display: none;
 }

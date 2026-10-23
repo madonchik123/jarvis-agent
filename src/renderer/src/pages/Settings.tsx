@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState } from 'react'
 import { Bot, Plug, Download, Eye, Info, Mic, SlidersHorizontal, Cpu, Volume2, X, Check } from 'lucide-react'
-import type { Settings } from '@shared/types'
+import type { Settings, UpdateState } from '@shared/types'
 import { api, IPC } from '../api'
 import { useApp, useT } from '../store'
 import { ProviderPanel, openUrl } from '../components/ProviderPanel'
@@ -130,6 +130,17 @@ export function SettingsPage() {
   const [ocr, setOcr] = useState('')
   const [extra, setExtra] = useState<{ id: string; name: string; lang: 'ru' | 'en' | 'both' }[]>([])
   const [info, setInfo] = useState<any>(null)
+  const [upd, setUpd] = useState<UpdateState | null>(null)
+  useEffect(() => {
+    void api.invoke('update:state').then((u: UpdateState) => setUpd(u))
+    return api.on('update:changed', (u: UpdateState) => setUpd(u))
+  }, [])
+  const [serverHealth, setServerHealth] = useState<{ ok: boolean; notice?: string } | null>(null)
+  useEffect(() => {
+    if (s.voiceMode !== 'server') return
+    setServerHealth(null)
+    api.invoke('voice:serverHealth').then((h: any) => setServerHealth(h ?? { ok: false }))
+  }, [s.voiceMode, s.ttsServerUrl])
 
   useEffect(() => {
     navigator.mediaDevices
@@ -139,6 +150,7 @@ export function SettingsPage() {
       .finally(() => navigator.mediaDevices.enumerateDevices().then((d) => setMics(d.filter((x) => x.kind === 'audioinput'))))
     api.invoke('ocr:langs').then((l: string) => setOcr(l || ''))
     api.invoke('app:info').then((i: any) => setInfo(i))
+    void api.invoke('agent:wake') // provider / connector lists need the agent server
   }, [])
   useEffect(() => setKeyDraft(s.apiKey), [s.apiKey])
   useEffect(() => {
@@ -259,6 +271,9 @@ export function SettingsPage() {
                       onChange={(v) => patch({ permissionMode: v })}
                     />
                   </Row>
+                  <Row label={t('settings.agentIdle')} hint={t('settings.agentIdleHint')}>
+                    <Slider value={s.agentIdleMinutes} min={0} max={60} step={5} onChange={(v) => patch({ agentIdleMinutes: v })} />
+                  </Row>
                   <Row label={t('settings.autoNew')} hint={t('settings.autoNewHint')}>
                     <Slider value={s.autoNewThreadMinutes} min={0} max={180} step={5} onChange={(v) => patch({ autoNewThreadMinutes: v })} />
                   </Row>
@@ -336,27 +351,47 @@ export function SettingsPage() {
             {tab === 'voice' && (
               <>
                 <Group title={t('sg.engine')}>
-                  <Row label={t('settings.voiceEngine')}>
+                  <Row label={t('voice.source')} hint={t('voice.source.' + s.voiceMode)} col>
                     <Seg
-                      value={engine}
+                      value={s.voiceMode}
                       options={[
-                        ['fish', t('settings.engine.fish')],
-                        ['piper', t('settings.engine.piper')],
-                        ['clone', t('settings.engine.clone')]
+                        ['server', t('voice.mode.server')],
+                        ['custom', t('voice.mode.custom')],
+                        ['local', t('voice.mode.local')]
                       ]}
                       onChange={(v) => {
-                        if (v === 'fish') patch({ voiceRu: 'fish:ru', voiceEn: 'fish:en' })
-                        else if (v === 'clone') patch({ voiceRu: 'xtts:jarvis', voiceEn: 'xtts:jarvis' })
-                        else patch({ voiceRu: 'ru_RU-denis-medium', voiceEn: 'jarvis-high' })
+                        if (v === 'local') {
+                          const clone = extra.some((x) => x.id.startsWith('xtts'))
+                          patch({ voiceMode: 'local', voiceRu: clone ? 'xtts:jarvis' : 'ru_RU-denis-medium', voiceEn: clone ? 'xtts:jarvis' : 'jarvis-high' })
+                        } else patch({ voiceMode: v, voiceRu: 'fish:ru', voiceEn: 'fish:en' })
                       }}
                     />
                   </Row>
+                  {s.voiceMode === 'server' && (
+                    <Row label={t('voice.serverStatus')}>
+                      <span className={'chip ' + (serverHealth?.ok ? 'ok' : serverHealth ? 'bad' : '')}>
+                        <span className="dot" /> {serverHealth ? (serverHealth.ok ? t('voice.server.ok') : serverHealth.notice || t('voice.server.down')) : '…'}
+                      </span>
+                    </Row>
+                  )}
+                  {s.voiceMode === 'local' && extra.some((x) => x.id.startsWith('xtts')) && (
+                    <Row label={t('voice.localEngine')}>
+                      <Seg
+                        value={s.voiceRu.startsWith('xtts:') ? 'clone' : 'piper'}
+                        options={[
+                          ['piper', t('settings.engine.piper')],
+                          ['clone', t('settings.engine.clone')]
+                        ]}
+                        onChange={(v) => patch(v === 'clone' ? { voiceRu: 'xtts:jarvis', voiceEn: 'xtts:jarvis' } : { voiceRu: 'ru_RU-denis-medium', voiceEn: 'jarvis-high' })}
+                      />
+                    </Row>
+                  )}
                   <Row label={t('settings.voiceEnabled')}>
                     <Switch on={s.voiceEnabled} onChange={(v) => patch({ voiceEnabled: v })} />
                   </Row>
                 </Group>
 
-                {!s.fishApiKey ? (
+                {s.voiceMode === 'custom' && (
                   <Group title={t('sg.fishCreds')} hint={t('settings.fishHint')}>
                     <Row label={t('settings.fishKey')} col>
                       <div style={{ display: 'flex', gap: 8, width: '100%' }}>
@@ -376,67 +411,68 @@ export function SettingsPage() {
                       <input className="input" defaultValue={s.fishVoiceEn} placeholder="reference_id" onBlur={(e) => patch({ fishVoiceEn: e.target.value.trim() })} />
                     </Row>
                   </Group>
+                )}
+
+                {s.voiceMode === 'local' ? (
+                <Group title={t('sg.voices')}>
+                    <Row label={t('settings.voiceRu')}>
+                      <select className="select" value={s.voiceRu} onChange={(e) => patch({ voiceRu: e.target.value })}>
+                        {extra.filter((v) => v.lang !== 'en' && !v.id.startsWith('fish')).map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.name}
+                          </option>
+                        ))}
+                        {ruVoices.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button className="btn sm" onClick={() => preview(s.voiceRu, 'Добрый день, сэр. Все системы работают в штатном режиме.')}>
+                        {t('settings.preview')}
+                      </button>
+                    </Row>
+                    <Row label={t('settings.voiceEn')}>
+                      <select className="select" value={s.voiceEn} onChange={(e) => patch({ voiceEn: e.target.value })}>
+                        {extra.filter((v) => v.lang !== 'ru' && !v.id.startsWith('fish')).map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.name}
+                          </option>
+                        ))}
+                        {enVoices.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button className="btn sm" onClick={() => preview(s.voiceEn, 'Good evening, sir. All systems are running at full capacity.')}>
+                        {t('settings.preview')}
+                      </button>
+                    </Row>
+                  </Group>
                 ) : (
+                  <Group title={t('sg.voices')}>
+                    <Row label={t('voice.preview')}>
+                      <button className="btn sm" onClick={() => preview(s.voiceRu, 'Добрый день, сэр. Все системы работают в штатном режиме.')}>
+                        RU · {t('settings.preview')}
+                      </button>
+                      <button className="btn sm" onClick={() => preview(s.voiceEn, 'Good evening, sir. All systems are running at full capacity.')}>
+                        EN · {t('settings.preview')}
+                      </button>
+                    </Row>
+                  </Group>
+                )}
+
+                {s.voiceMode === 'server' && (
                   <details className="fold">
-                    <summary>{t('sg.fishCreds')}</summary>
+                    <summary>{t('voice.advanced')}</summary>
                     <Group>
-                      <Row label={t('settings.fishKey')} col>
-                        <div style={{ display: 'flex', gap: 8, width: '100%' }}>
-                          <input className="input" type="password" placeholder="sk-fish-…" defaultValue={s.fishApiKey} onBlur={(e) => e.target.value.trim() !== s.fishApiKey && patch({ fishApiKey: e.target.value.trim() })} />
-                          <button className="btn" onClick={() => openUrl('https://fish.audio/app/api-keys')}>
-                            {t('settings.fishGetKey')} ↗
-                          </button>
-                        </div>
-                      </Row>
-                      <Row label={t('settings.fishModel')}>
-                        <input className="input" defaultValue={s.fishModel} onBlur={(e) => patch({ fishModel: e.target.value.trim() || 's2.1-pro-free' })} />
-                      </Row>
-                      <Row label={t('settings.fishRu')}>
-                        <input className="input" defaultValue={s.fishVoiceRu} placeholder="reference_id" onBlur={(e) => patch({ fishVoiceRu: e.target.value.trim() })} />
-                      </Row>
-                      <Row label={t('settings.fishEn')}>
-                        <input className="input" defaultValue={s.fishVoiceEn} placeholder="reference_id" onBlur={(e) => patch({ fishVoiceEn: e.target.value.trim() })} />
+                      <Row label={t('voice.serverUrl')}>
+                        <input className="input" defaultValue={s.ttsServerUrl} onBlur={(e) => patch({ ttsServerUrl: e.target.value.trim() || 'https://jarvis-tts-jade.vercel.app' })} />
                       </Row>
                     </Group>
                   </details>
                 )}
-
-                <Group title={t('sg.voices')}>
-                  <Row label={t('settings.voiceRu')}>
-                    <select className="select" value={s.voiceRu} onChange={(e) => patch({ voiceRu: e.target.value })}>
-                      {extra.filter((v) => v.lang !== 'en').map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name}
-                        </option>
-                      ))}
-                      {ruVoices.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button className="btn sm" onClick={() => preview(s.voiceRu, 'Добрый день, сэр. Все системы работают в штатном режиме.')}>
-                      {t('settings.preview')}
-                    </button>
-                  </Row>
-                  <Row label={t('settings.voiceEn')}>
-                    <select className="select" value={s.voiceEn} onChange={(e) => patch({ voiceEn: e.target.value })}>
-                      {extra.filter((v) => v.lang !== 'ru').map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name}
-                        </option>
-                      ))}
-                      {enVoices.map((v) => (
-                        <option key={v.id} value={v.id}>
-                          {v.name}
-                        </option>
-                      ))}
-                    </select>
-                    <button className="btn sm" onClick={() => preview(s.voiceEn, 'Good evening, sir. All systems are running at full capacity.')}>
-                      {t('settings.preview')}
-                    </button>
-                  </Row>
-                </Group>
 
                 <Group title={t('sg.playback')}>
                   <Row label={t('settings.speed')}>
@@ -502,6 +538,60 @@ export function SettingsPage() {
                     </small>
                   </div>
                 </div>
+              </Group>
+            )}
+
+            {tab === 'about' && (
+              <Group title={t('upd.title')}>
+                <Row label={t('upd.version')} hint={upd?.checkedAt ? t('upd.checked', { when: new Date(upd.checkedAt).toLocaleTimeString() }) : undefined}>
+                  <b>{upd?.current ?? '…'}</b>
+                  {upd?.status === 'uptodate' && <span className="chip ok">{t('upd.latest')}</span>}
+                  {upd?.status === 'available' && <span className="chip warn">{t('upd.available', { v: upd.version ?? '' })}</span>}
+                  {upd?.status === 'downloaded' && <span className="chip ok">{t('upd.ready', { v: upd.version ?? '' })}</span>}
+                  {upd?.status === 'error' && <span className="chip bad" title={upd.error}>{t('upd.error')}</span>}
+                  {upd?.status === 'unsupported' && <span className="chip">{t('upd.dev')}</span>}
+                </Row>
+                {upd?.status === 'available' && upd.notes && (
+                  <div className="about" style={{ whiteSpace: 'pre-wrap', paddingTop: 0 }}>
+                    {upd.notes}
+                  </div>
+                )}
+                {upd?.status === 'downloading' && (
+                  <div style={{ padding: '4px 18px 14px' }}>
+                    <div className="bar">
+                      <i style={{ width: `${upd.percent ?? 0}%` }} />
+                    </div>
+                    <small style={{ color: 'var(--muted)' }}>{upd.percent ?? 0}%</small>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 10, padding: '4px 18px 14px', flexWrap: 'wrap' }}>
+                  {upd?.status === 'available' && (
+                    <button className="btn sm primary" onClick={() => api.invoke('update:download')}>
+                      <Download size={14} /> {t('upd.download')}
+                    </button>
+                  )}
+                  {upd?.status === 'downloaded' && (
+                    <button className="btn sm primary" onClick={() => api.invoke('update:install')}>
+                      {t('upd.install')}
+                    </button>
+                  )}
+                  {upd?.status !== 'downloading' && upd?.status !== 'downloaded' && (
+                    <button className="btn sm" disabled={upd?.status === 'checking'} onClick={() => api.invoke('update:check')}>
+                      {upd?.status === 'checking' ? t('upd.checking') : t('upd.check')}
+                    </button>
+                  )}
+                </div>
+                <Row label={t('upd.mode')}>
+                  <Seg
+                    value={s.autoUpdate}
+                    options={[
+                      ['ask', t('upd.mode.ask')],
+                      ['auto', t('upd.mode.auto')],
+                      ['off', t('upd.mode.off')]
+                    ]}
+                    onChange={(v) => patch({ autoUpdate: v })}
+                  />
+                </Row>
               </Group>
             )}
 

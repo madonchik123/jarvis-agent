@@ -19,6 +19,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run native
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
@@ -41,7 +42,7 @@ jobs:
           $notes = @"
           ## Jarvis $tag — Windows
 
-          Download **Jarvis Setup *.exe** below and run it (Windows 10/11 x64).
+          Download **Jarvis-Setup-*.exe** below and run it (Windows 10/11 x64).
           The installer is unsigned, so SmartScreen may warn: *More info → Run anyway*.
 
           On first run Jarvis downloads its on-device speech models (~350 MB). The AI agent works with free opencode models without a key.
@@ -49,10 +50,13 @@ jobs:
 
           **Platform support:** Windows only for now — computer use, OCR and window control rely on Windows APIs. macOS/Linux are not supported yet.
           "@
-          gh release create $tag (Get-ChildItem release -Filter '*.exe').FullName release\SHA256SUMS.txt --title "Jarvis $tag" --notes "$notes"
+          $assets = @((Get-ChildItem release -Filter '*.exe').FullName) + @((Get-ChildItem release -Filter '*.blockmap').FullName) + @('release\latest.yml', 'release\SHA256SUMS.txt')
+          gh release create $tag $assets --title "Jarvis $tag" --notes "$notes"
       - uses: actions/upload-artifact@v4
         with:
           name: jarvis-windows
           path: |
             release/*.exe
+            release/*.blockmap
+            release/latest.yml
             release/SHA256SUMS.txt

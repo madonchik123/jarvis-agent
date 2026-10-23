@@ -1,7 +1,7 @@
 {
   "name": "jarvis-assistant",
   "productName": "Jarvis",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Voice-first AI desktop assistant powered by the opencode agent harness",
   "main": "out/main/index.js",
   "author": "Jarvis contributors",
@@ -12,12 +12,13 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "models": "tsx scripts/download-models.mts",
-    "dist": "electron-vite build && electron-builder --win --x64",
-    "test": "tsx --test tests/*.test.mts"
+    "dist": "npm run native && electron-vite build && electron-builder --win --x64",
+    "test": "tsx --test tests/*.test.mts",
+    "native": "dotnet build native/JarvisNative -c Release -v q"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "open-computer-use": "^1.1.2",
+    "electron-updater": "^6.8.9",
     "opencode-ai": "^1.19.4",
     "sherpa-onnx-node": "^1.13.8",
     "zod": "^4.6.7"
@@ -55,8 +56,7 @@
       "node_modules/sherpa-onnx-win-x64/**",
       "node_modules/opencode-windows-x64/**",
       "node_modules/opencode-ai/**",
-      "out/main/**",
-      "node_modules/open-computer-use/**"
+      "out/main/**"
     ],
     "extraResources": [
       {
@@ -64,7 +64,8 @@
         "to": ".",
         "filter": [
           "bridge.ps1",
-          "icon.png"
+          "icon.png",
+          "native/**"
         ]
       }
     ],
@@ -83,8 +84,16 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
-      "shortcutName": "Jarvis"
-    }
+      "shortcutName": "Jarvis",
+      "artifactName": "Jarvis-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "madonchik123",
+        "repo": "jarvis-agent"
+      }
+    ]
   },
-  "homepage": "https://github.com/"
+  "homepage": "https://github.com/madonchik123/jarvis-agent"
 }

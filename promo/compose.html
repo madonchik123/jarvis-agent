@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { --accent: #38d6ff; --text: #eaf4ff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: #04070c; }
+  #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; color: var(--text); }
+  #bg { position: absolute; inset: 0;
+    background:
+      radial-gradient(900px 700px at 80% 8%, rgba(56, 214, 255, 0.20), transparent 60%),
+      radial-gradient(900px 800px at 0% 100%, rgba(110, 90, 255, 0.18), transparent 60%), #04070c; }
+  #grid { position: absolute; inset: -80px; opacity: 0.32;
+    background-image: linear-gradient(rgba(120,190,255,.16) 2px, transparent 2px), linear-gradient(90deg, rgba(120,190,255,.16) 2px, transparent 2px);
+    background-size: 108px 108px; -webkit-mask-image: radial-gradient(ellipse at 50% 40%, #000 0%, transparent 72%); }
+  .layer { position: absolute; left: 0; top: 0; width: 1080px; height: 1920px; opacity: 0; pointer-events: none; }
+  .box { position: absolute; overflow: hidden; border-radius: 36px; border: 2px solid rgba(120, 200, 255, 0.30);
+    box-shadow: 0 30px 90px -20px rgba(0,0,0,.8), 0 0 80px -20px rgba(56,214,255,.45); background: #05080d; }
+  .box img { position: absolute; transform-origin: 0 0; }
+  #head { position: absolute; left: 54px; right: 54px; top: 150px; height: 180px; display: flex; align-items: center; justify-content: center; text-align: center;
+    font-family: 'Bahnschrift', 'Segoe UI Variable Display', 'Segoe UI', sans-serif; font-size: 86px; line-height: 1.02; letter-spacing: 0.02em; text-transform: uppercase; font-weight: 700;
+    text-shadow: 0 0 40px rgba(56,214,255,.55), 0 6px 30px rgba(0,0,0,.7); }
+  #head b { color: var(--accent); font-weight: 700; }
+  #sub { position: absolute; left: 50px; right: 50px; top: 1400px; height: 170px; display: flex; align-items: center; justify-content: center; text-align: center; }
+  #sub span { display: inline-block; padding: 14px 30px 18px; border-radius: 26px; background: rgba(4, 8, 14, 0.62); backdrop-filter: blur(6px);
+    font-size: 62px; line-height: 1.12; font-weight: 700; text-shadow: 0 4px 20px rgba(0,0,0,.8); border: 1px solid rgba(120,200,255,.18); }
+  #sub em { font-style: normal; color: var(--accent); }
+  #flash { position: absolute; inset: 0; background: #bdeaff; opacity: 0; mix-blend-mode: screen; }
+  .chip { position: absolute; padding: 12px 26px; border-radius: 99px; font-size: 40px; font-weight: 700; background: rgba(10, 22, 36, .85);
+    border: 2px solid rgba(120,200,255,.4); box-shadow: 0 0 40px -8px rgba(56,214,255,.6); white-space: nowrap; }
+  #title { position: absolute; left: 0; right: 0; top: 340px; text-align: center; font-family: 'Bahnschrift', 'Segoe UI', sans-serif; font-weight: 700; font-size: 190px; letter-spacing: .24em; padding-left: .24em;
+    color: #fff; text-shadow: 0 0 60px rgba(56,214,255,.9), 0 0 140px rgba(56,214,255,.5); }
+  #tag { position: absolute; left: 0; right: 0; top: 580px; text-align: center; font-size: 50px; color: #bcd3e8; letter-spacing: .04em; }
+  .cta-card { position: absolute; left: 90px; right: 90px; top: 470px; padding: 50px 44px; border-radius: 40px; text-align: center;
+    background: linear-gradient(160deg, rgba(14,28,46,.92), rgba(8,16,28,.92)); border: 2px solid rgba(120,200,255,.35); box-shadow: 0 0 120px -20px rgba(56,214,255,.6); }
+  .cta-card h3 { margin: 0 0 22px; font-family: 'Bahnschrift', 'Segoe UI'; font-size: 66px; text-transform: uppercase; letter-spacing: .04em; }
+  .cta-card .repo { font-size: 50px; color: var(--accent); font-weight: 700; word-break: break-all; }
+  .cta-card p { margin: 22px 0 0; font-size: 42px; color: #bcd3e8; font-weight: 400; }
+  .btn { display: inline-block; margin-top: 34px; padding: 22px 54px; border-radius: 26px; background: var(--accent); color: #031018; font-size: 46px; font-weight: 700; box-shadow: 0 0 60px rgba(56,214,255,.7); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div>
+  <div id="grid"></div>
+
+  <div class="layer" id="Lorb"><div class="box" id="orbBox"><img id="orbImg" /></div></div>
+  <div class="layer" id="Lland"><div class="box" id="landBox"><img id="landImg" /></div></div>
+  <div class="layer" id="Lphone">
+    <div class="box" id="phoneBox"><img id="phoneImg" /></div>
+    <div class="box" id="pipBox"><img id="pipImg" /></div>
+    <div class="chip" id="pipChip">Калькулятор</div>
+  </div>
+  <div class="layer" id="Lpages"><div class="box" id="pageBox"><img id="pageImg" /></div></div>
+  <div class="layer" id="Lchips"></div>
+  <div class="layer" id="Lcta">
+    <div class="cta-card">
+      <h3>Бесплатно · Open source</h3>
+      <div class="repo">github.com/madonchik123/jarvis-agent</div>
+      <p>Windows 10 / 11 · RU + EN</p>
+      <div class="btn">Скачать — ссылка в профиле</div>
+    </div>
+  </div>
+  <div class="layer" id="Ltitle"><div id="title">JARVIS</div><div id="tag">бесплатный голосовой ИИ-агент</div></div>
+
+  <div id="head"></div>
+  <div id="sub"></div>
+  <div id="flash"></div>
+</div>
+
+<script src="build/data.js"></script>
+<script>
+  const D = window.PROMO // { total, lines:[{start,end,dur,say}], clips:{name:{frames}}, calc:{...} }
+  const ROOT = new URL('build/clips/', location.href).href
+  const $ = (id) => document.getElementById(id)
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v))
+  const ease = (x) => 1 - Math.pow(1 - clamp(x), 3)
+  const easeIO = (x) => { x = clamp(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2 }
+
+  // ---- scenes (cut just before each voice line) --------------------------------------------------------------------
+  const L = D.lines
+  const cut = (i) => (i === 0 ? 0 : Math.max(0, L[i].start - 0.12))
+  const S = [0, 1, 2, 3, 4, 5, 6].map((i) => ({ a: cut(i), b: i === 6 ? D.total : cut(i + 1) }))
+  const FADE = 0.2
+  const vis = (t, s) => clamp(Math.min((t - s.a) / FADE, (s.b - t) / FADE + 0.0001))
+  const inScene = (t, s) => t >= s.a - 0.001 && t < s.b + 0.001
+
+  const frameUrl = (name, sec, loop) => {
+    const n = D.clips[name].frames
+    let i = Math.round(sec * 30)
+    i = loop ? ((i % n) + n) % n : clamp(i, 0, n - 1)
+    return ROOT + name + '/' + String(i + 1).padStart(5, '0') + '.jpg'
+  }
+  const setImg = async (img, url) => {
+    if (img.dataset.u === url) return
+    img.dataset.u = url
+    img.src = url
+    try { await img.decode() } catch (e) {}
+  }
+  const place = (box, x, y, w, h) => { Object.assign(box.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' }) }
+  // show source rect (sx,sy,sw,sh) of an image of natural size (nw,nh) inside its box
+  const crop = (img, box, sx, sy, sw, nw) => {
+    const sc = parseFloat(box.style.width) / sw
+    Object.assign(img.style, { width: nw * sc + 'px', left: -sx * sc + 'px', top: -sy * sc + 'px', transform: 'none' })
+  }
+
+  // ---- headline + subtitles -----------------------------------------------------------------------------------------
+  const HEADS = [
+    { s: 0, html: 'Всё ещё делаешь<br>это <b>руками</b>?' },
+    { s: 1, html: 'Знакомься:<br><b>Джарвис</b>' },
+    { s: 2, html: 'Скажи <b>«Джарвис»</b>' },
+    { s: 3, html: 'Он сам <b>управляет</b><br>твоим ПК' },
+    { s: 4, html: '<b>Помнит</b> тебя' },
+    { s: 5, html: 'Подключи <b>почту</b><br>и <b>календарь</b>' },
+    { s: 6, html: '<b>Бесплатно</b><br>и с открытым кодом' }
+  ]
+  const HILITE = /^(джарвис|бесплатный|ии-агент|гmail|gmail|календарь|notion|github|открыт|код|любом|приложении|руками|слушаю|пк|сам|помню|команды)$/i
+  // chunk each voice line into 3-4 word captions timed by character count
+  const CHUNKS = L.map((l) => {
+    const words = l.say.split(/\s+/)
+    const groups = []
+    for (let i = 0; i < words.length; ) {
+      const n = words.length - i <= 5 ? words.length - i : words[i].length > 9 ? 2 : 3
+      groups.push(words.slice(i, i + n))
+      i += n
+    }
+    const total = groups.reduce((a, g) => a + g.join(' ').length, 0)
+    let acc = 0
+    return groups.map((g) => {
+      const len = g.join(' ').length
+      const c = { a: l.start + (acc / total) * l.dur, b: l.start + ((acc + len) / total) * l.dur, words: g }
+      acc += len
+      return c
+    })
+  })
+  const subHtml = (g) => g.map((w) => (HILITE.test(w.replace(/[.,:;!?«»"]/g, '')) ? `<em>${w}</em>` : w)).join(' ')
+
+  // ---- the frame -----------------------------------------------------------------------------------------------------
+  window.renderAt = async (t) => {
+    const jobs = []
+    const sc = S.findIndex((s) => t >= s.a && t < s.b)
+    const idx = sc < 0 ? 6 : sc
+    const s = S[idx]
+    const local = t - s.a
+    const v = vis(t, s)
+
+    // background drift
+    $('grid').style.transform = `translateY(${(t * 22) % 108}px)`
+
+    // default: hide all layers
+    for (const id of ['Lorb', 'Lland', 'Lphone', 'Lpages', 'Lchips', 'Lcta', 'Ltitle']) $(id).style.opacity = 0
+
+    // headline
+    const head = HEADS[idx]
+    const hv = ease(local / 0.35)
+    $('head').innerHTML = '<div>' + head.html + '</div>'
+    $('head').style.opacity = clamp(Math.min(hv, (s.b - t) / 0.15))
+    $('head').style.transform = `translateY(${(1 - hv) * 36}px) scale(${0.94 + 0.06 * hv})`
+
+    // ---- S1/S2/S7 orb crop (idle) and S3 (states) ---------------------------------------------------------------
+    if (idx === 0 || idx === 1 || idx === 2 || idx === 6) {
+      const orb = $('Lorb')
+      orb.style.opacity = idx === 6 ? v * 0.55 : v
+      place($('orbBox'), 0, 370, 1080, 960)
+      const img = $('orbImg')
+      let orbT
+      if (idx === 2) { orbT = 1.7 + local * 0.8; crop(img, $('orbBox'), 135, 170, 630, 1770) }
+      else { orbT = (t * 0.6) % 1.6; crop(img, $('orbBox'), 140, 170, 620, 1770) }
+      if (idx === 6) orb.style.filter = 'blur(2px)'
+      else orb.style.filter = 'none'
+      jobs.push(setImg(img, frameUrl('orb', orbT)))
+      const z = 1 + 0.05 * easeIO(local / (s.b - s.a))
+      $('orbBox').style.transform = `scale(${z})`
+    }
+
+    // title card on S2
+    if (idx === 1) {
+      $('Ltitle').style.opacity = 0
+    }
+
+    // ---- S4 computer use ---------------------------------------------------------------------------------------
+    if (idx === 3) {
+      const ph = $('Lphone')
+      ph.style.opacity = v
+      const chatT = 3.6 + (local / (s.b - s.a)) * 14.8 // 14.8 s of the real run in this scene
+      place($('phoneBox'), 24, 370, 620, 960)
+      crop($('phoneImg'), $('phoneBox'), 0, 20, 1080, 1080)
+      jobs.push(setImg($('phoneImg'), frameUrl('chat_calc', chatT)))
+      // the real calculator, cropped from the screen recording (offset between the two recordings measured at capture time)
+      const dT = chatT + D.calc.offset
+      const show = dT >= D.calc.firstFront
+      const pv = show ? ease((dT - D.calc.firstFront) / 0.4) : 0
+      place($('pipBox'), 590, 790, 470, 470)
+      $('pipBox').style.opacity = pv
+      $('pipBox').style.transform = `translateY(${(1 - pv) * 40}px) scale(${0.9 + 0.1 * pv})`
+      crop($('pipImg'), $('pipBox'), 0, 0, D.calc.w, D.calc.w)
+      jobs.push(setImg($('pipImg'), frameUrl('calc_desktop', dT)))
+      Object.assign($('pipChip').style, { left: '640px', top: '1275px', opacity: pv })
+    }
+
+    // ---- S5 memory + commands -----------------------------------------------------------------------------------
+    if (idx === 4) {
+      $('Lpages').style.opacity = v
+      place($('pageBox'), 0, 370, 1080, 960)
+      const second = local > (s.b - s.a) / 2
+      const name = second ? 'page_routines' : 'page_memory'
+      crop($('pageImg'), $('pageBox'), 0, 0, 1080, 1080)
+      jobs.push(setImg($('pageImg'), frameUrl(name, local % ((s.b - s.a) / 2) + 0.4)))
+      $('head').innerHTML = '<div>' + (second ? 'Учит <b>команды</b>' : '<b>Помнит</b> тебя') + '</div>'
+    }
+
+    // ---- S6 connectors ------------------------------------------------------------------------------------------
+    if (idx === 5) {
+      $('Lland').style.opacity = v
+      place($('landBox'), 0, 380, 1080, 880)
+      crop($('landImg'), $('landBox'), 330, 120, 1100, 1770)
+      const cT = 1.15 + easeIO(local / (s.b - s.a)) * 2.7 // the Connectors tab (catalogue scrolling) in the settings capture
+      jobs.push(setImg($('landImg'), frameUrl('settings', cT)))
+      const lc = $('Lchips')
+      lc.style.opacity = v
+      if (!lc.dataset.built) {
+        lc.dataset.built = 1
+        const items = ['Gmail', 'Google Calendar', 'Notion', 'GitHub']
+        const xs = [60, 300, 640, 60]
+        const ys = [1160, 1160, 1160, 1160]
+        lc.innerHTML = items.map((n, i) => `<div class="chip" data-i="${i}" style="left:${[50, 258, 612, 811][i]}px;top:1286px">${n}</div>`).join('')
+      }
+      lc.querySelectorAll('.chip').forEach((c, i) => {
+        const p = ease((local - 0.5 - i * 0.28) / 0.35)
+        c.style.opacity = p
+        c.style.transform = `translateY(${(1 - p) * 30}px)`
+      })
+    }
+
+    // ---- S7 CTA -------------------------------------------------------------------------------------------------
+    if (idx === 6) {
+      $('Lcta').style.opacity = v
+      const p = ease(local / 0.5)
+      $('Lcta').style.transform = `translateY(${(1 - p) * 60}px)`
+    } else $('Lcta').style.transform = 'none'
+
+    // ---- subtitles --------------------------------------------------------------------------------------------
+    let sub = ''
+    for (const line of CHUNKS) for (const c of line) if (t >= c.a - 0.04 && t < c.b + 0.04) sub = subHtml(c.words)
+    $('sub').innerHTML = sub ? `<div><span>${sub}</span></div>` : ''
+    $('sub').style.display = idx === 6 ? 'none' : 'flex'
+
+    // transition flash at scene starts
+    const fl = clamp(1 - local / 0.22) * (idx === 0 ? 0 : 0.5)
+    $('flash').style.opacity = fl
+    // hook: a quick glitch flicker in the first 0.4 s
+    if (idx === 0 && t < 0.4) $('flash').style.opacity = ((Math.floor(t * 30) % 3) === 0) ? 0.35 : 0
+
+    await Promise.all(jobs)
+    return true
+  }
+</script>
+</body>
+</html>

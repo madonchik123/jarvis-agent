@@ -1,5 +1,11 @@
+import { net } from 'electron'
+
 /** Fish Audio cloud TTS (https://docs.fish.audio). Voices are referenced by `reference_id`; the model goes in a header. */
 export interface FishConfig {
+  /** server = the free shared Jarvis voice server, custom = the user's own Fish Audio key */
+  mode: 'server' | 'custom' | 'local'
+  serverUrl: string
+  installId: string
   apiKey: string
   model: string
   voiceRu: string
@@ -62,4 +68,33 @@ export async function fishSynth(cfg: FishConfig, text: string, lang: 'ru' | 'en'
     }
   }
   throw new FishError(`Fish Audio: ${lastErr?.message || 'request failed'}`)
+}
+
+/**
+ * The free shared voice server (jarvis-tts): it holds a pool of Fish Audio keys, so users need no account.
+ * Uses Chromium's network stack (net.fetch), which honours the system proxy / VPN like the browser does.
+ */
+export async function serverSynth(cfg: FishConfig, text: string, lang: 'ru' | 'en', speed = 1): Promise<Buffer> {
+  const url = cfg.serverUrl.replace(/\/+$/, '') + '/api/tts'
+  let res: Response
+  try {
+    res = await net.fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-jarvis-client': cfg.installId },
+      body: JSON.stringify({ text, lang, format: 'mp3', speed: Math.min(1.6, Math.max(0.6, speed)) }),
+      signal: AbortSignal.timeout(30_000)
+    })
+  } catch (e: any) {
+    throw new FishError(`free voice server unreachable (${e?.message || e})`)
+  }
+  if (!res.ok) {
+    let msg = ''
+    try {
+      msg = ((await res.json()) as { error?: string }).error || ''
+    } catch {}
+    throw new FishError(`free voice server: ${msg || 'HTTP ' + res.status}`, res.status)
+  }
+  const buf = Buffer.from(await res.arrayBuffer())
+  if (buf.length < 64) throw new FishError('free voice server returned no audio')
+  return buf
 }

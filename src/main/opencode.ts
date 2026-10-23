@@ -1,6 +1,6 @@
 import { spawn, ChildProcess } from 'child_process'
 import { createServer } from 'net'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { EventEmitter } from 'events'
 import { app } from 'electron'
@@ -8,8 +8,6 @@ import type { ChatItem, ConnectorConfig, ConnectorStatus, ModelInfo, PermissionR
 import { splitCommand } from '../shared/connectors'
 import { JARVIS_PROMPT } from './agent-prompt'
 import { dataDir, ThreadStore } from './store'
-import { Ocu } from './ocu'
-import { cpSync } from 'fs'
 
 const FREE_DEFAULTS: ModelInfo[] = [
   { id: 'opencode/glm-5.3-flash-free', name: 'GLM 5.3 Flash (free)', free: true, vision: true, provider: 'opencode' },
@@ -91,7 +89,9 @@ export class Opencode extends EventEmitter {
   private restarts = 0
   lastEventAt = Date.now()
   private currentVia: 'voice' | 'text' = 'text'
-  status: 'starting' | 'ready' | 'error' | 'stopped' = 'stopped'
+  status: 'starting' | 'ready' | 'error' | 'stopped' | 'sleeping' = 'stopped'
+  private sleepTimer: NodeJS.Timeout | null = null
+  private waking: Promise<void> | null = null
   private modelCache: ModelInfo[] = [...FREE_DEFAULTS]
 
   constructor(
@@ -212,13 +212,8 @@ export class Opencode extends EventEmitter {
       this.base = `http://127.0.0.1:${port}`
       const root = join(dataDir(), 'opencode')
       for (const d of ['data', 'config', 'state', 'cache']) mkdirSync(join(root, d), { recursive: true })
-      // Open Computer Use skill (MIT) → the agent's skill directory, so it is discoverable via the skill tool
-      try {
-        const skill = Ocu.skillDir()
-        if (skill) cpSync(skill, join(root, 'config', 'opencode', 'skills', 'open-computer-use'), { recursive: true, force: true })
-      } catch (e) {
-        console.warn('[opencode] could not install OCU skill', e)
-      }
+      // the old Open Computer Use skill is replaced by Jarvis' native window tools
+      rmSync(join(root, 'config', 'opencode', 'skills', 'open-computer-use'), { recursive: true, force: true })
       const cwd = this.getSettings().cwd || join(app.getPath('home'), 'Jarvis')
       mkdirSync(cwd, { recursive: true })
       const env = {
@@ -232,7 +227,9 @@ export class Opencode extends EventEmitter {
         // Jarvis is its own assistant: don't inherit the user's Claude Code skills / CLAUDE.md / prompts
         OPENCODE_DISABLE_CLAUDE_CODE: '1',
         OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: '1',
-        OPENCODE_DISABLE_CLAUDE_CODE_PROMPT: '1'
+        OPENCODE_DISABLE_CLAUDE_CODE_PROMPT: '1',
+        // Bun's low-memory mode: smaller heap, more frequent GC (the server is mostly idle I/O)
+        BUN_OPTIONS: [process.env.BUN_OPTIONS, '--smol'].filter(Boolean).join(' ')
       }
       const bin = binaryPath()
       const p = spawn(bin, ['serve', '--port', String(port), '--hostname', '127.0.0.1'], { cwd, env, windowsHide: true })
@@ -242,7 +239,7 @@ export class Opencode extends EventEmitter {
       p.on('exit', (code) => {
         console.warn('[opencode] exited', code)
         this.proc = null
-        if (this.status === 'stopped') return
+        if (this.status === 'stopped' || this.status === 'sleeping') return
         this.setStatus('error', 'opencode exited')
         // self-heal: restart with a short back-off (max 4 times in a row)
         if (this.restarts < 4) {
@@ -259,6 +256,7 @@ export class Opencode extends EventEmitter {
       void this.listen()
       this.restarts = 0
       this.setStatus('ready')
+      this.armSleep()
       void this.listModels(true) // real capability flags (vision!) of the models, not just the built-in defaults
       void this.providers().catch(() => {}) // prefetch the catalogue so the Settings page opens instantly
     } catch (e: any) {
@@ -563,7 +561,9 @@ export class Opencode extends EventEmitter {
   }
 
   async send(text: string, system: string, via: 'voice' | 'text') {
+    await this.wake()
     if (this.status !== 'ready') throw new Error('Agent is not ready: ' + this.status)
+    this.armSleep()
     this.currentVia = via
     this.aborted = false
     const [providerID, ...rest] = this.getSettings().model.split('/')
@@ -710,6 +710,7 @@ export class Opencode extends EventEmitter {
 
   /** One-shot question about a screenshot, answered by a vision-capable model in a throwaway session. */
   async visionQuery(jpeg: Buffer, question: string): Promise<string> {
+    await this.wake()
     if (this.status !== 'ready') throw new Error('agent not ready')
     const [providerID, ...rest] = this.pickVisionModel().split('/')
     const s = await this.req('POST', '/session', { title: 'vision' })
@@ -740,7 +741,39 @@ export class Opencode extends EventEmitter {
     await this.start()
   }
 
+  /**
+   * The agent server is the biggest process (~300–500 MB). After N idle minutes it is shut down; the conversation is on disk,
+   * so wake() restarts it in a few seconds — the assistant already wakes it when the wake word is heard.
+   */
+  private armSleep() {
+    if (this.sleepTimer) clearTimeout(this.sleepTimer)
+    const min = this.getSettings().agentIdleMinutes
+    if (!min || this.status !== 'ready') return
+    this.sleepTimer = setTimeout(() => {
+      if (this.isBusy || this.pendingPerms.size || Date.now() - this.lastEventAt < min * 60_000) return this.armSleep()
+      console.log('[opencode] idle — unloading the agent server')
+      void this.stop().then(() => this.setStatus('sleeping'))
+    }, min * 60_000)
+  }
+
+  /** Make sure the agent server runs (restarts it after an idle unload). */
+  async wake(): Promise<void> {
+    if (this.status === 'ready') return this.armSleep()
+    if (!this.waking) {
+      this.waking = (async () => {
+        if (!this.proc && this.status !== 'starting') await this.start()
+        const t0 = Date.now()
+        while (this.status !== 'ready' && Date.now() - t0 < 45_000) {
+          if (this.status === 'error' && !this.proc) break
+          await new Promise((r) => setTimeout(r, 200))
+        }
+      })().finally(() => (this.waking = null))
+    }
+    return this.waking
+  }
+
   async stop() {
+    if (this.sleepTimer) clearTimeout(this.sleepTimer)
     this.abortSSE?.abort()
     this.setStatus('stopped')
     try {
