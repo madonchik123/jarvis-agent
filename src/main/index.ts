@@ -19,11 +19,11 @@ app.setName('Jarvis')
 initLogging()
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 app.commandLine.appendSwitch('js-flags', '--expose-gc') // lets the speech worker hand model memory back when idle
-// memory: GPU, network and audio services run inside the main process instead of three extra processes,
-// and windows of the same site (main, HUD, overlays) share one renderer process
+// memory: network and audio services run inside the main process instead of two extra processes.
+// (No process-per-site: sharing one renderer between the opaque main window and the transparent HUD / overlay makes
+// those windows paint an opaque background on Windows — the whole screen went dark during computer use.)
 app.commandLine.appendSwitch('enable-features', 'NetworkServiceInProcess')
 app.commandLine.appendSwitch('disable-features', 'AudioServiceOutOfProcess,SpareRendererForSitePerProcess,CalculateNativeWinOcclusion')
-app.commandLine.appendSwitch('process-per-site')
 
 let assistant: Assistant
 let mainWin: BrowserWindow | null = null
@@ -588,6 +588,15 @@ app.whenReady().then(async () => {
       await new Promise((r) => setTimeout(r, 4000))
     }
     console.log('[feed] done')
+  }
+  if (process.env.JARVIS_TEST_OVERLAY) {
+    // dev: show the "Jarvis is controlling the PC" overlay for 8 s (check that it stays see-through)
+    await new Promise((r) => setTimeout(r, 4000))
+    console.log('[overlay-test] on')
+    await assistant.overlay.setControl(true, 'управляет компьютером · Ctrl+Alt+K — стоп')
+    await new Promise((r) => setTimeout(r, 8000))
+    await assistant.overlay.setControl(false)
+    console.log('[overlay-test] off')
   }
   if (process.env.JARVIS_TEST_DOCS) {
     // dev / packaged self-test of the document toolkit: diagram, image search, deck, PDF, read back
