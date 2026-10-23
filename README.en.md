@@ -76,7 +76,7 @@ opencode serve (agent)  ·  MCP tools & connectors  ·  jarvis-native (C#: UI Au
 ## Install
 
 ### Option A — installer
-Download `Jarvis-Setup-x.y.z.exe` from the repository's **[Releases](https://github.com/madonchik123/jarvis-agent/releases)** and run it. The installer is unsigned, so Windows SmartScreen may warn: *More info → Run anyway*. After that the app updates itself.
+Download `Jarvis-Setup-x.y.z.exe` from the repository's **[Releases](https://github.com/madonchik123/jarvis-agent/releases)** and run it. The installer is unsigned, so Windows SmartScreen may warn: *More info → Run anyway*. Everything it needs ships inside (opencode, the C# engine, the VC++ runtime for Piper); the speech models (~530 MB) download by themselves on first launch with no clicks: progress shows in the setup window, you can use Jarvis meanwhile, and a dropped connection is retried. After that the app updates itself (with your consent).
 
 ### Option B — from source
 ```bash
@@ -198,7 +198,7 @@ The engine is `native/JarvisNative` (C#, .NET Framework 4.8, ~70 KB exe, starts 
 
 ## Updates
 
-The installed app checks GitHub Releases (20 s after start, then every 6 h). *Settings → About → Updates*: **Ask me** (notify, you press *Download*), **Download automatically**, or **Never check**. When the download is ready press *Restart and install*. Releases are produced by the `Release` workflow when a `v*` tag is pushed.
+The installed app checks GitHub Releases (20 s after start, then every 6 h). *Settings → About → Updates*: **Ask me** (a "new version available — update?" dialog), **Download automatically**, or **Never check**. Once an update is downloaded Jarvis asks whether to restart now; choose *Later* and it installs the next time you quit. Releases are produced by the `Release` workflow when a `v*` tag is pushed.
 
 ## Resource use
 

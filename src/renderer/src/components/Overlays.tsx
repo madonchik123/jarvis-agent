@@ -74,15 +74,13 @@ export function SetupModal() {
   const download = useApp((s) => s.downloadAssets)
   const close = useApp((s) => s.closeSetup)
   const [key, setKey] = useState(settings.apiKey)
-  const [busy, setBusy] = useState(false)
 
+  // The main process downloads missing models by itself at launch; this window only shows the progress.
   const needed = assets.filter((a) => a.required && !a.installed)
-  const total = needed.reduce((n, a) => n + a.sizeMB, 0)
-  const start = async () => {
-    setBusy(true)
+  const busy = needed.some((a) => progress[a.id] && progress[a.id].phase !== 'error' && progress[a.id].phase !== 'done')
+  const failed = !busy && needed.some((a) => progress[a.id]?.phase === 'error')
+  const finish = async () => {
     if (key.trim() !== settings.apiKey) await patch({ apiKey: key.trim() })
-    if (needed.length) await download(needed.map((a) => a.id))
-    setBusy(false)
     close()
   }
   return (
@@ -117,12 +115,17 @@ export function SetupModal() {
             })}
           </div>
         )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
-          <button className="btn" onClick={close} disabled={busy}>
-            {t('setup.skip')}
-          </button>
-          <button className="btn primary" onClick={start} disabled={busy}>
-            <Download size={16} /> {needed.length ? `${t('setup.start')} · ${total} MB` : t('setup.start')}
+        <p style={{ textAlign: 'center', color: failed ? 'var(--danger, #f87171)' : 'var(--muted)', margin: '12px 0 0', fontSize: 13 }}>
+          {needed.length === 0 ? t('setup.done') : failed ? t('setup.failed') : t('setup.auto')}
+        </p>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+          {failed && (
+            <button className="btn" onClick={() => void download(needed.map((a) => a.id))}>
+              <Download size={16} /> {t('setup.retry')}
+            </button>
+          )}
+          <button className="btn primary" onClick={finish}>
+            {needed.length && !failed ? t('setup.background') : t('setup.continue')}
           </button>
         </div>
       </motion.div>

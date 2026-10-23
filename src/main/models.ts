@@ -3,6 +3,7 @@ import { join, dirname } from 'path'
 import { spawn } from 'child_process'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
+import { net } from 'electron'
 import type { ModelAsset, SetupProgress } from '../shared/types'
 
 const GH = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models'
@@ -166,7 +167,8 @@ export function listAssets(base: string): ModelAsset[] {
 async function download(url: string, dest: string, onProgress: (received: number, total: number) => void) {
   mkdirSync(dirname(dest), { recursive: true })
   const tmp = dest + '.part'
-  const res = await fetch(url, { redirect: 'follow' })
+  // Electron's network stack honours the system proxy (plain Node fetch doesn't)
+  const res = await net.fetch(url, { redirect: 'follow' })
   if (!res.ok || !res.body) throw new Error(`HTTP ${res.status} for ${url}`)
   const total = Number(res.headers.get('content-length') || 0)
   let received = 0

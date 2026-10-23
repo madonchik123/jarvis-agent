@@ -104,6 +104,7 @@ export async function bootstrap(opts: { chat?: boolean } = {}) {
   api.on(IPC.permission, (r: PermissionRequest) => st.setState((s) => ({ permissions: [...s.permissions.filter((p) => p.id !== r.id), r] })))
   api.on(IPC.permissionClose, (id: string) => st.setState((s) => ({ permissions: s.permissions.filter((p) => p.id !== id) })))
   api.on(IPC.modelProgress, (p: SetupProgress) => st.setState((s) => ({ progress: { ...s.progress, [p.id]: p } })))
+  api.on('assets:changed', (assets: any) => st.setState({ assets }))
   if (opts.chat) {
     api.on(IPC.chat, (item: ChatItem) => st.setState((s) => ({ chat: upsertChat(s.chat, item), partial: item.kind === 'user' ? '' : s.partial })))
     api.on(IPC.chatReset, () => void st.getState().loadChat())

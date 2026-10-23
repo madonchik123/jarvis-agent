@@ -4,6 +4,13 @@ import { join, dirname } from 'path'
 import { EventEmitter } from 'events'
 import type { XttsSidecar } from './xtts'
 import { fishSynth, serverSynth, type FishConfig } from './fish'
+import { resourcePath } from './paths'
+
+/** Piper needs the VC++ runtime; the app ships it in resources/native/vcrt for PCs without the redistributable. */
+function piperEnv() {
+  const vcrt = resourcePath('native', 'vcrt')
+  return existsSync(vcrt) ? { ...process.env, PATH: `${process.env.PATH || ''};${vcrt}` } : process.env
+}
 
 /**
  * Persistent Piper processes (one per voice). Piper in --json-input mode reads a JSON line per
@@ -29,7 +36,7 @@ class PiperVoice {
     const p = spawn(
       this.exe,
       ['--model', this.model, '--json-input', '--output_dir', this.outDir, '--quiet'],
-      { cwd: dirname(this.exe), windowsHide: true }
+      { cwd: dirname(this.exe), env: piperEnv(), windowsHide: true }
     )
     p.stdout.on('data', (d) => {
       this.buf += d.toString()

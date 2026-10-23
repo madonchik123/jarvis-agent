@@ -1,7 +1,7 @@
 {
   "name": "jarvis-assistant",
   "productName": "Jarvis",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Voice-first AI desktop assistant powered by the opencode agent harness",
   "main": "out/main/index.js",
   "author": "Jarvis contributors",
@@ -14,7 +14,7 @@
     "models": "tsx scripts/download-models.mts",
     "dist": "npm run native && electron-vite build && electron-builder --win --x64",
     "test": "tsx --test tests/*.test.mts",
-    "native": "dotnet build native/JarvisNative -c Release -v q"
+    "native": "dotnet build native/JarvisNative -c Release -v q && node scripts/vcrt.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

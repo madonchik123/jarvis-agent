@@ -21,7 +21,6 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 app.commandLine.appendSwitch('js-flags', '--expose-gc') // lets the speech worker hand model memory back when idle
 // memory: GPU, network and audio services run inside the main process instead of three extra processes,
 // and windows of the same site (main, HUD, overlays) share one renderer process
-app.commandLine.appendSwitch('in-process-gpu')
 app.commandLine.appendSwitch('enable-features', 'NetworkServiceInProcess')
 app.commandLine.appendSwitch('disable-features', 'AudioServiceOutOfProcess,SpareRendererForSitePerProcess,CalculateNativeWinOcclusion')
 app.commandLine.appendSwitch('process-per-site')
@@ -30,7 +29,13 @@ let assistant: Assistant
 let mainWin: BrowserWindow | null = null
 let hudWin: BrowserWindow | null = null
 let tray: Tray | null = null
-const updater = new Updater()
+const updater = new Updater({
+  lang: () => {
+    const l = assistant?.settings().interfaceLang
+    return l === 'ru' || l === 'en' ? l : app.getLocale().startsWith('ru') ? 'ru' : 'en'
+  },
+  parent: () => (mainWin && !mainWin.isDestroyed() && mainWin.isVisible() ? mainWin : undefined)
+})
 let quitting = false
 
 const all = () => [mainWin, hudWin].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
@@ -267,19 +272,7 @@ function wireIpc() {
   ipcMain.handle(IPC.toggleListen, () => assistant.toggleListen())
 
   ipcMain.handle(IPC.modelAssets, () => listAssets(dataDir()))
-  ipcMain.handle(IPC.modelDownload, async (_e, ids: string[]) => {
-    for (const id of ids) {
-      try {
-        await installAsset(dataDir(), id, (p: SetupProgress) => toUi(IPC.modelProgress, p))
-      } catch (e) {
-        console.error('download failed', id, e)
-      }
-    }
-    assistant.prewarmVoices()
-    if (!assistant.speech.ready && !assistant.speech.missing().length) assistant.speech.start()
-    assistant.emitStatus()
-    return listAssets(dataDir())
-  })
+  ipcMain.handle(IPC.modelDownload, (_e, ids: string[]) => installAssets(ids))
 
   ipcMain.handle(IPC.routines, () => assistant.routines.list())
   ipcMain.handle(IPC.routinesSave, (_e, r) => assistant.routines.save1(r))
@@ -397,6 +390,43 @@ function wireIpc() {
   ipcMain.on(IPC.micLevel, (_e, level: number) => toUi(IPC.micLevel, level))
   ipcMain.on(IPC.ttsLevel, (_e, level: number) => toUi(IPC.ttsLevel, level))
   ipcMain.on(IPC.ttsEnded, (_e, id: string) => assistant.onPlayEnded(id))
+}
+
+// ---- dependency installer: one queue, so the launch-time auto install and the Setup button never race ----
+let installChain: Promise<unknown> = Promise.resolve()
+function installAssets(ids: string[], tries = 1) {
+  const run = async () => {
+    for (const id of ids) {
+      if (listAssets(dataDir()).find((a) => a.id === id)?.installed) continue
+      for (let n = 1; n <= tries; n++) {
+        try {
+          await installAsset(dataDir(), id, (p: SetupProgress) => toUi(IPC.modelProgress, p))
+          break
+        } catch (e) {
+          console.error(`download failed (${n}/${tries})`, id, e)
+          if (n < tries) await new Promise((r) => setTimeout(r, 3000 * n))
+        }
+      }
+    }
+    assistant.prewarmVoices()
+    if (!assistant.speech.ready && !assistant.speech.missing().length) assistant.speech.start()
+    assistant.emitStatus()
+    const list = listAssets(dataDir())
+    broadcast('assets:changed', list)
+    return list
+  }
+  const p = installChain.then(run, run)
+  installChain = p.catch(() => {})
+  return p
+}
+
+/** Downloads every required model the app is missing, without waiting for the user; retries later while offline. */
+async function autoInstall() {
+  const missing = () => listAssets(dataDir()).filter((a) => a.required && !a.installed).map((a) => a.id)
+  if (!missing().length) return
+  console.log('[setup] auto-installing', missing().join(', '))
+  await installAssets(missing(), 3)
+  if (missing().length) setTimeout(() => void autoInstall(), 5 * 60_000)
 }
 
 function wireAssistantEvents() {
@@ -528,6 +558,7 @@ app.whenReady().then(async () => {
   registerHotkey()
   applyAutoStart()
   await assistant.init()
+  void autoInstall()
   updater.init(assistant.settings().autoUpdate)
   updater.on('state', (st) => broadcast('update:changed', st))
   if (process.env.JARVIS_TEST_WAIT) {

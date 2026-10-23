@@ -33,6 +33,9 @@ namespace JarvisNative
     /// <summary>Top-level windows: enumeration, focusing and occlusion-proof capture.</summary>
     internal static class Windows
     {
+        [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr h);
+        [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr h, IntPtr dc);
+        [DllImport("gdi32.dll")] static extern bool BitBlt(IntPtr dst, int x, int y, int w, int h, IntPtr src, int sx, int sy, int rop);
         [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
         [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern bool QueryFullProcessImageName(IntPtr h, int flags, StringBuilder name, ref int size);
@@ -184,7 +187,18 @@ namespace JarvisNative
         {
             var bmp = new Bitmap(Math.Max(1, w), Math.Max(1, h), PixelFormat.Format24bppRgb);
             using (var g = Graphics.FromImage(bmp))
-                g.CopyFromScreen(x, y, 0, 0, bmp.Size, layered ? CopyPixelOperation.SourceCopy | CopyPixelOperation.CaptureBlt : CopyPixelOperation.SourceCopy);
+            {
+                if (!layered) g.CopyFromScreen(x, y, 0, 0, bmp.Size);
+                else
+                {
+                    // BitBlt with CAPTUREBLT: includes layered windows (CopyFromScreen rejects the combined flag)
+                    IntPtr src = GetDC(IntPtr.Zero);
+                    IntPtr dst = g.GetHdc();
+                    BitBlt(dst, 0, 0, bmp.Width, bmp.Height, src, x, y, 0x00CC0020 | 0x40000000);
+                    g.ReleaseHdc(dst);
+                    ReleaseDC(IntPtr.Zero, src);
+                }
+            }
             return bmp;
         }
 
