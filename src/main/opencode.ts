@@ -560,8 +560,12 @@ export class Opencode extends EventEmitter {
     if (!quota && wait < 60_000) return
     if (this.limitReported) return
     this.limitReported = true
-    this.emit('limit', { message: String(st?.message ?? ''), waitMs: Math.max(0, wait), quota, free: st?.action?.reason === 'free_tier_limit' })
-    void this.abort().catch(() => {})
+    // stop the turn completely before anyone reacts: a retry sent while the abort is still settling gets aborted too
+    void (async () => {
+      await this.abort().catch(() => {})
+      await new Promise((r) => setTimeout(r, 700))
+      this.emit('limit', { message: String(st?.message ?? ''), waitMs: Math.max(0, wait), quota, free: st?.action?.reason === 'free_tier_limit' })
+    })()
   }
 
   private finishTurn() {

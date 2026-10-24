@@ -625,6 +625,12 @@ app.whenReady().then(async () => {
       const t0 = Date.now()
       const done = new Promise<void>((r) => assistant.opencode.once('turnEnd', () => r()))
       console.log('[cmd-test] >>>', cmd)
+      if (process.env.JARVIS_TEST_FAKE_LIMIT) {
+        // pretend the free model just hit its quota (as opencode reports it) to exercise the free-model fallback
+        assistant.opencode.once('turnStart', () =>
+          setTimeout(() => (assistant.opencode as any).onRetry({ type: 'retry', message: 'Free usage exceeded, subscribe to Go', action: { reason: 'free_tier_limit' }, next: Date.now() + 3_600_000 }), 300)
+        )
+      }
       void assistant.handleCommand(cmd, 'text')
       await Promise.race([done, new Promise((r) => setTimeout(r, 15 * 60_000))])
       console.log(`[cmd-test] turn done in ${Math.round((Date.now() - t0) / 1000)} s`)

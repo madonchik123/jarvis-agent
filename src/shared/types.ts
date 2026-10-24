@@ -30,6 +30,8 @@ export interface Settings {
   autoNewThreadMinutes: number
   /** unload the agent server after this many idle minutes (0 = keep it running) */
   agentIdleMinutes: number
+  /** free opencode models that hit their usage limit → when they are usable again (ms epoch) */
+  freeBlocked: Record<string, number>
   /** ask = tell me and let me download, auto = download in the background, off = never check */
   autoUpdate: 'ask' | 'auto' | 'off'
   visionModel: string
@@ -84,6 +86,7 @@ export const DEFAULT_SETTINGS: Settings = {
   followupSeconds: 7,
   autoNewThreadMinutes: 45,
   agentIdleMinutes: 10,
+  freeBlocked: {},
   autoUpdate: 'ask',
   visionModel: 'auto',
   cloneOffered: false,

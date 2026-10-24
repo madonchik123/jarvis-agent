@@ -80,6 +80,8 @@ export class Assistant extends EventEmitter implements Hub {
   private nudges = 0
   private lastSystem = ''
   private lastVia: 'voice' | 'text' = 'text'
+  private lastUserText = ''
+  private freeSwitches = 0
   private watchdog: NodeJS.Timeout | null = null
   private ackCache = new Map<string, Buffer>()
   private lastAck = ''
@@ -161,8 +163,10 @@ export class Assistant extends EventEmitter implements Hub {
       this.setState('error')
       setTimeout(() => this.state === 'error' && this.setState('idle'), 2500)
     })
-    this.opencode.on('limit', (l: { message: string; waitMs: number; quota: boolean; free: boolean }) => {
+    this.opencode.on('limit', async (l: { message: string; waitMs: number; quota: boolean; free: boolean }) => {
       console.log('[agent] provider limit / long retry:', l.message, Math.round(l.waitMs / 1000) + 's')
+      // free models have separate quotas: when one is used up, move to the next free model and redo the request
+      if (await this.switchFreeModel(l.waitMs)) return
       const ru = this.lastLang === 'ru'
       const hours = l.waitMs > 3_600_000 ? Math.round(l.waitMs / 3_600_000) : 0
       const when = l.waitMs > 60_000 ? (ru ? (hours ? ` (снова доступна примерно через ${hours} ч)` : ` (снова доступна через ${Math.ceil(l.waitMs / 60_000)} мин)`) : hours ? ` (available again in about ${hours} h)` : ` (available again in ${Math.ceil(l.waitMs / 60_000)} min)`) : ''
@@ -532,11 +536,49 @@ export class Assistant extends EventEmitter implements Hub {
       this.nudges = 0
       this.lastSystem = system
       this.lastVia = via
+      this.lastUserText = text
+      this.freeSwitches = 0
       await this.opencode.send(text, system, via)
     } catch (e: any) {
       this.emit('chat', { id: uid(), kind: 'system', text: `⚠ ${e?.message || e}`, at: Date.now() } satisfies ChatItem)
       this.setState('idle')
     }
+  }
+
+  /** preferred order of OpenCode's free models (all handle tools); anything else that is free comes after */
+  private static FREE_ORDER = ['deepseek-v4.1-flash-free', 'glm-5.3-flash-free', 'mimo-v2.6-flash-free', 'nemotron-3-ultra-free', 'beam-free', 'flint-40b-free', 'nemotron-3.5-lightning-free']
+
+  /** The current free model hit its limit: remember that, switch to the next usable free model and re-send the request. */
+  private async switchFreeModel(waitMs: number): Promise<boolean> {
+    const cur = this.settings().model
+    if (!/^opencode\/.+-free$/.test(cur) || !this.lastUserText || this.freeSwitches >= 3) return false
+    const now = Date.now()
+    const blocked = { ...(this.settings().freeBlocked ?? {}) }
+    for (const [k, until] of Object.entries(blocked)) if (until < now) delete blocked[k]
+    blocked[cur] = now + Math.max(waitMs, 30 * 60_000)
+    this.settingsStore.set({ freeBlocked: blocked })
+    const models = await this.opencode.listModels(true).catch(() => [])
+    const free = models.filter((m) => m.provider === 'opencode' && m.free && !/-vl-/.test(m.id)).map((m) => m.id)
+    const rank = (id: string) => {
+      const i = Assistant.FREE_ORDER.indexOf(id.replace(/^opencode\//, ''))
+      return i < 0 ? 99 : i
+    }
+    const next = free.filter((id) => id !== cur && !(blocked[id] > now)).sort((a, b) => rank(a) - rank(b))[0]
+    if (!next) return false
+    this.freeSwitches++
+    this.settingsStore.set({ model: next })
+    const name = (id: string) => models.find((m) => m.id === id)?.name ?? id.replace(/^opencode\//, '')
+    const ru = this.lastLang === 'ru'
+    this.emit('chat', { id: uid(), kind: 'system', text: ru ? `↻ Лимит модели «${name(cur)}» исчерпан — переключаюсь на «${name(next)}» и повторяю запрос.` : `↻ "${name(cur)}" hit its free limit — switching to "${name(next)}" and retrying.`, at: now } satisfies ChatItem)
+    // let the aborted turn finish, then ask again with the new model
+    for (let i = 0; i < 50 && this.opencode.isBusy; i++) await new Promise((r) => setTimeout(r, 100))
+    try {
+      await this.opencode.send(this.lastUserText, this.lastSystem, this.lastVia)
+    } catch (e: any) {
+      this.emit('chat', { id: uid(), kind: 'system', text: `⚠ ${e?.message || e}`, at: Date.now() } satisfies ChatItem)
+      return false
+    }
+    return true
   }
 
   /** Long pause since the last message → start a fresh conversation so old context doesn't bleed into new tasks. */

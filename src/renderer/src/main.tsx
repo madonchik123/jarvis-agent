@@ -70,11 +70,7 @@ npx: 11.9.0
       <div className="body">
         <Rail />
         <main className="content">
-          {status.speech === 'missing-models' && !setupOpen && page === 'assistant' && (
-            <div className="banner">
-              <span>⚠</span> {t('banner.missing')}
-            </div>
-          )}
+          {status.speech === 'missing-models' && !setupOpen && page === 'assistant' && <ModelsBanner />}
           <AnimatePresence mode="wait">
             <motion.div key={page} style={{ height: status.speech === 'missing-models' && page === 'assistant' ? 'calc(100% - 52px)' : '100%' }} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.22 }}>
               {pages[page]}
@@ -83,6 +79,43 @@ npx: 11.9.0
         </main>
       </div>
       <AnimatePresence>{setupOpen && <SetupModal />}</AnimatePresence>
+    </div>
+  )
+}
+
+/** First-run speech models: shows the background download as progress (or a retry after a failure) instead of "missing". */
+function ModelsBanner() {
+  const { t } = useT()
+  const assets = useApp((s) => s.assets)
+  const progress = useApp((s) => s.progress)
+  const download = useApp((s) => s.downloadAssets)
+  const needed = assets.filter((a) => a.required && !a.installed)
+  const active = needed.filter((a) => progress[a.id] && progress[a.id].phase !== 'error' && progress[a.id].phase !== 'done')
+  const failed = needed.filter((a) => progress[a.id]?.phase === 'error')
+  if (active.length) {
+    const totalMB = needed.reduce((n, a) => n + a.sizeMB, 0) || 1
+    const doneMB = needed.reduce((n, a) => {
+      const p = progress[a.id]
+      return n + (p?.phase === 'done' ? a.sizeMB : p && p.total ? (a.sizeMB * p.received) / p.total : 0)
+    }, 0)
+    return (
+      <div className="banner">
+        <span>⬇</span> {t('banner.downloading')} {Math.min(99, Math.round((doneMB / totalMB) * 100))}%
+      </div>
+    )
+  }
+  if (failed.length)
+    return (
+      <div className="banner">
+        <span>⚠</span> {t('banner.failed')}{' '}
+        <button className="btn" style={{ marginLeft: 10, padding: '4px 12px' }} onClick={() => void download(needed.map((a) => a.id))}>
+          {t('setup.retry')}
+        </button>
+      </div>
+    )
+  return (
+    <div className="banner">
+      <span>⚠</span> {t('banner.missing')}
     </div>
   )
 }
