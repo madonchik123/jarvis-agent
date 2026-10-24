@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root { --accent: #38d6ff; --text: #eef6ff; --hot: #ffcf4a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: #03060b; }
+  #stage { position: relative; width: 1080px; height: 1920px; overflow: hidden; font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; color: var(--text); }
+  #bg { position: absolute; inset: 0; background: radial-gradient(900px 700px at 85% 10%, rgba(56,214,255,.22), transparent 60%), radial-gradient(1000px 800px at 0% 95%, rgba(120,90,255,.20), transparent 60%), #03060b; }
+  #grid { position: absolute; inset: -110px; opacity: .3; background-image: linear-gradient(rgba(120,190,255,.16) 2px, transparent 2px), linear-gradient(90deg, rgba(120,190,255,.16) 2px, transparent 2px); background-size: 108px 108px; -webkit-mask-image: radial-gradient(ellipse at 50% 40%, #000 0%, transparent 72%); }
+  .abs { position: absolute; }
+  .layer { position: absolute; inset: 0; }
+  #prog { left: 40px; right: 40px; top: 214px; height: 8px; display: flex; gap: 10px; }
+  #prog i { flex: 1; border-radius: 4px; background: rgba(255,255,255,.18); overflow: hidden; position: relative; }
+  #prog i b { position: absolute; inset: 0; background: var(--accent); transform-origin: 0 0; }
+  #step { left: 0; right: 0; top: 250px; text-align: center; font-family: 'Bahnschrift', sans-serif; font-size: 34px; letter-spacing: .3em; color: var(--accent); text-transform: uppercase; }
+  #head { left: 50px; right: 50px; top: 296px; height: 190px; display: flex; align-items: center; justify-content: center; text-align: center; font-family: 'Bahnschrift', 'Segoe UI Variable Display', sans-serif; font-weight: 700; font-size: 84px; line-height: 1.0; text-transform: uppercase; text-shadow: 0 0 40px rgba(56,214,255,.5), 0 6px 26px rgba(0,0,0,.8); }
+  #head b { color: var(--accent); font-weight: 700; }
+  .pane { position: absolute; border-radius: 28px; overflow: hidden; background: #0a0f16; border: 2px solid rgba(120,200,255,.35); box-shadow: 0 30px 90px -20px rgba(0,0,0,.85), 0 0 90px -20px rgba(56,214,255,.5); }
+  .pane img { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #speed { padding: 8px 20px; border-radius: 16px; background: rgba(255, 207, 74, .95); color: #1a1200; font-weight: 800; font-size: 34px; }
+  #cursor { width: 54px; height: 54px; left: 0; top: 0; }
+  #ripple { width: 90px; height: 90px; border-radius: 50%; border: 5px solid var(--accent); }
+  #sub { left: 40px; right: 150px; top: 1330px; height: 150px; display: flex; align-items: center; justify-content: center; text-align: center; }
+  #sub .w { display: inline-block; margin: 0 16px; font-family: 'Bahnschrift', 'Segoe UI', sans-serif; font-size: 74px; font-weight: 700; text-transform: uppercase; color: #fff; -webkit-text-stroke: 3px #000; paint-order: stroke fill; text-shadow: 0 6px 0 #000, 0 0 30px rgba(0,0,0,.9); }
+  #sub .w.on { color: var(--hot); }
+  #sub.user .w { text-transform: none; font-family: 'Segoe UI Variable Text', 'Segoe UI', sans-serif; font-size: 62px; -webkit-text-stroke: 0; color: #dfe9f5; text-shadow: 0 4px 18px rgba(0,0,0,.9); }
+  #sub.user .w.on { color: #fff; }
+  #sub .mic { font-family: 'Segoe UI Emoji'; margin-right: 12px; }
+  #flash { position: absolute; inset: 0; background: #c7efff; opacity: 0; mix-blend-mode: screen; }
+  /* hook / cta */
+  #orbWrap { left: 190px; top: 600px; width: 700px; height: 700px; border-radius: 50%; overflow: hidden; -webkit-mask-image: radial-gradient(circle, #000 55%, transparent 70%); }
+  #orbWrap img { position: absolute; transform-origin: 0 0; }
+  #timer { left: 0; right: 0; top: 1150px; text-align: center; }
+  #timer span { display: inline-block; padding: 14px 34px; border-radius: 40px; background: rgba(10,22,36,.9); border: 2px solid rgba(56,214,255,.55); font-family: 'Bahnschrift', sans-serif; font-size: 56px; font-weight: 700; box-shadow: 0 0 50px -10px rgba(56,214,255,.7); }
+  /* download card */
+  #card { left: 90px; right: 90px; top: 620px; padding: 40px; border-radius: 34px; background: linear-gradient(160deg, rgba(14,28,46,.96), rgba(8,16,28,.96)); border: 2px solid rgba(120,200,255,.4); box-shadow: 0 0 120px -20px rgba(56,214,255,.6); }
+  #card .row { display: flex; align-items: center; gap: 28px; }
+  #card .ico { width: 120px; height: 120px; border-radius: 30px; background: radial-gradient(circle, #fff 0%, #9cf0ff 22%, #1aa6e0 55%, #0b1626 75%); box-shadow: 0 0 40px rgba(56,214,255,.6); flex: none; }
+  #card .fn { font-size: 46px; font-weight: 700; }
+  #card .meta { margin-top: 6px; font-size: 30px; color: #8fa3ba; }
+  #card .bar { margin-top: 36px; height: 16px; border-radius: 8px; background: rgba(255,255,255,.1); overflow: hidden; }
+  #card .bar i { display: block; height: 100%; width: 0; border-radius: 8px; background: linear-gradient(90deg, #2cb8f5, #7debff); box-shadow: 0 0 20px rgba(56,214,255,.8); }
+  #card .done { margin-top: 26px; font-size: 38px; font-weight: 700; color: #7dffb0; opacity: 0; }
+  #arrow { left: 0; right: 0; top: 1060px; text-align: center; font-size: 120px; color: var(--accent); text-shadow: 0 0 40px rgba(56,214,255,.8); }
+  #title { left: 0; right: 0; top: 450px; text-align: center; font-family: 'Bahnschrift', sans-serif; font-weight: 700; font-size: 180px; letter-spacing: .22em; padding-left: .22em; color: #fff; text-shadow: 0 0 60px rgba(56,214,255,.9), 0 0 140px rgba(56,214,255,.5); }
+  #cta { left: 70px; right: 150px; top: 1010px; padding: 38px 34px; border-radius: 36px; text-align: center; background: linear-gradient(160deg, rgba(14,28,46,.95), rgba(8,16,28,.95)); border: 2px solid rgba(120,200,255,.4); box-shadow: 0 0 120px -20px rgba(56,214,255,.6); }
+  #cta h3 { margin: 0 0 14px; font-family: 'Bahnschrift', sans-serif; font-size: 50px; text-transform: uppercase; }
+  #cta .file { font-size: 38px; color: var(--accent); font-weight: 700; }
+  #cta .os { margin-top: 10px; font-size: 28px; color: #8fa3ba; }
+  #cta .btn { display: inline-block; margin-top: 24px; padding: 18px 40px; border-radius: 22px; background: var(--accent); color: #031018; font-size: 42px; font-weight: 800; box-shadow: 0 0 60px rgba(56,214,255,.7); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bg"></div><div id="grid"></div>
+  <div class="layer" id="Lhook"><div class="abs" id="orbWrap"><img id="orbImg" /></div><div class="abs" id="timer"><span>⏱ 1 минута</span></div></div>
+  <div class="layer" id="Ldl">
+    <div class="abs" id="card">
+      <div class="row"><div class="ico"></div><div><div class="fn">Jarvis-Installer.exe</div><div class="meta">0,3 МБ · github.com/madonchik123/jarvis-agent</div></div></div>
+      <div class="bar"><i id="dlbar"></i></div>
+      <div class="done" id="dldone">✓ Скачано — запускаем</div>
+    </div>
+    <div class="abs" id="arrow">⬇</div>
+  </div>
+  <div class="layer" id="Linst"><div class="pane" id="instPane"><img id="instImg" /></div>
+    <svg class="abs" id="cursor" viewBox="0 0 24 24"><path d="M4 2 L4 19 L8.5 15 L11.5 22 L14.5 20.7 L11.6 14 L18 14 Z" fill="#fff" stroke="#000" stroke-width="1.4" stroke-linejoin="round"/></svg>
+    <div class="abs" id="ripple"></div>
+  </div>
+  <div class="layer" id="Lask"><div class="pane" id="askPane"><img id="askImg" /></div></div>
+  <div class="layer" id="Lcta"><div class="abs" id="title">JARVIS</div>
+    <div class="abs" id="cta"><h3>Бесплатно · без ключей</h3><div class="file">Jarvis-Installer.exe</div><div class="os">Windows 10 / 11 · русский и английский</div><div class="btn">Ссылка в профиле</div></div>
+  </div>
+  <div class="abs" id="speed"></div>
+  <div class="abs" id="prog"></div>
+  <div class="abs" id="step"></div>
+  <div class="abs" id="head"></div>
+  <div class="abs" id="sub"></div>
+  <div id="flash"></div>
+</div>
+<script src="build/v3/data.js"></script>
+<script>
+  const D = window.PROMO3 // { total, lines, cuts, info, orbFrames }
+  const V3 = new URL('build/v3/', location.href).href
+  const OLD = new URL('build/clips/', location.href).href
+  const $ = (id) => document.getElementById(id)
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v))
+  const ease = (x) => 1 - Math.pow(1 - clamp(x), 3)
+  const easeIO = (x) => { x = clamp(x); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2 }
+  const fr = (n) => String(n).padStart(5, '0') + '.jpg'
+  const setImg = async (img, url) => { if (img.dataset.u === url) return; img.dataset.u = url; img.src = url; try { await img.decode() } catch (e) {} }
+  const lerpKeys = (keys, t) => {
+    if (t <= keys[0][0]) return keys[0][1]
+    for (let i = 1; i < keys.length; i++) if (t <= keys[i][0]) { const [a, x] = keys[i - 1], [b, y] = keys[i]; return x + ((t - a) / (b - a || 1)) * (y - x) }
+    return keys[keys.length - 1][1]
+  }
+  const speedAt = (keys, t) => { for (let i = 1; i < keys.length; i++) if (t <= keys[i][0]) return (keys[i][1] - keys[i - 1][1]) / (keys[i][0] - keys[i - 1][0] || 1); return 1 }
+
+  // scenes (absolute seconds)
+  const S = [
+    { id: 'hook', a: 0, b: 4.4, step: '', head: 'Свой Джарвис<br><b>за минуту</b>' },
+    { id: 'dl', a: 4.4, b: 7.3, step: 'Шаг 1', head: 'Скачай<br><b>установщик</b>' },
+    { id: 'inst', a: 7.3, b: 13.2, step: 'Шаг 2', head: 'Одна<br><b>кнопка</b>' },
+    { id: 'talk', a: 13.2, b: 19.0, step: 'Шаг 3', head: 'Просто<br><b>говори</b>' },
+    { id: 'answer', a: 19.0, b: 31.6, step: '', head: 'Курс доллара?<br><b>Пожалуйста</b>' },
+    { id: 'cta', a: 31.6, b: D.total, step: '', head: '<b>Попробуй</b> сам' }
+  ]
+  // installer recording: scene time → recording time (the click happens at ~3.4 s of the recording)
+  const INST = [[7.3, 2.1], [8.4, 3.45], [12.3, 12.55], [13.2, 13.0]]
+  const CLICK = { t: 8.35, x: 845, y: 567 } // install button in the 1000 px wide recording
+  // app capture: scene time → capture time (feed of the spoken question starts at info.ask.feedAt)
+  const ASK = [[13.2, 0.3], [15.3, D.info.ask.feedAt], [19.0, 5.25], [19.3, 13.6], [21.6, 15.9], [22.4, 19.0], [31.6, 24.4]]
+
+  // captions: word by word, Jarvis yellow, the person in plain white with a mic
+  const CAP = D.lines.map((l) => {
+    const words = l.say.replace(/—/g, ' ').split(/\s+/).filter(Boolean)
+    const total = words.reduce((a, w) => a + w.length + 2, 0)
+    let acc = 0
+    const ws = words.map((w) => { const a = l.at + (acc / total) * l.dur; acc += w.length + 2; return { w, a, b: l.at + (acc / total) * l.dur } })
+    const groups = []
+    const per = l.who === 'user' ? 4 : 3
+    for (let i = 0; i < ws.length; ) { const n = ws.length - i <= per + 1 ? ws.length - i : per; groups.push(ws.slice(i, i + n)); i += n }
+    return { who: l.who, groups }
+  })
+  $('prog').innerHTML = S.map(() => '<i><b></b></i>').join('')
+
+  window.renderAt = async (t) => {
+    const jobs = []
+    let idx = S.findIndex((s) => t >= s.a && t < s.b); if (idx < 0) idx = S.length - 1
+    const s = S[idx], local = t - s.a, len = s.b - s.a
+    $('grid').style.transform = `translateY(${(t * 26) % 108}px)`
+    ;[...$('prog').children].forEach((el, i) => (el.firstChild.style.transform = `scaleX(${i < idx ? 1 : i > idx ? 0 : clamp(local / len)})`))
+    for (const L of ['Lhook', 'Ldl', 'Linst', 'Lask', 'Lcta']) $(L).style.display = 'none'
+    $('speed').style.opacity = 0
+    const hv = ease(local / 0.3)
+    $('head').innerHTML = '<div>' + s.head + '</div>'
+    $('head').style.opacity = clamp(Math.min(hv, (s.b - t) / 0.12))
+    $('head').style.transform = `scale(${0.86 + 0.14 * hv})`
+    $('step').textContent = s.step
+    $('step').style.opacity = s.step ? hv : 0
+
+    if (s.id === 'hook' || s.id === 'cta') {
+      $(s.id === 'hook' ? 'Lhook' : 'Lcta').style.display = ''
+      if (s.id === 'hook') {
+        const oi = Math.floor((t * 30) % D.orbFrames) + 1
+        jobs.push(setImg($('orbImg'), OLD + 'orb/' + fr(oi)))
+        Object.assign($('orbImg').style, { width: 1770 * 1.13 + 'px', left: -(440 * 1.13 - 350) + 'px', top: -(520 * 1.13 - 350) + 'px' })
+        $('orbWrap').style.transform = `scale(${1 + 0.07 * easeIO(local / len)})`
+        const p = ease((local - 0.6) / 0.4)
+        $('timer').style.opacity = p
+        $('timer').style.transform = `translateY(${(1 - p) * 30}px) scale(${1 + 0.04 * Math.sin(t * 6)})`
+      } else {
+        const p = ease((local - 0.2) / 0.5)
+        $('cta').style.opacity = p
+        $('cta').style.transform = `translateY(${(1 - p) * 50}px)`
+        $('title').style.opacity = ease(local / 0.4)
+      }
+    }
+    if (s.id === 'dl') {
+      $('Ldl').style.display = ''
+      const cv = ease(local / 0.35)
+      $('card').style.opacity = cv
+      $('card').style.transform = `translateY(${(1 - cv) * 50}px)`
+      const p = easeIO((local - 0.5) / 1.4)
+      $('dlbar').style.width = p * 100 + '%'
+      $('dldone').style.opacity = ease((local - 2.0) / 0.3)
+      $('arrow').style.transform = `translateY(${Math.sin(t * 7) * 14}px)`
+      $('arrow').style.opacity = 1 - ease((local - 1.9) / 0.3)
+    }
+    if (s.id === 'inst') {
+      $('Linst').style.display = ''
+      const P = { x: 40, y: 560, w: 1000, h: 642 }
+      Object.assign($('instPane').style, { left: P.x + 'px', top: P.y + 'px', width: P.w + 'px', height: P.h + 'px' })
+      const bv = ease(local / 0.35)
+      $('instPane').style.opacity = bv
+      $('instPane').style.transform = `translateY(${(1 - bv) * 50}px) scale(${0.95 + 0.05 * bv})`
+      const rt = lerpKeys(INST, t)
+      jobs.push(setImg($('instImg'), V3 + 'installer/' + fr(clamp(Math.round(rt * 30) + 1, 1, D.info.installer.frames))))
+      Object.assign($('instImg').style, { width: '1000px', height: '642px' })
+      // the cursor glides to "Установить" and clicks
+      const cx = P.x + CLICK.x, cy = P.y + CLICK.y
+      const m = easeIO((t - 7.6) / 0.65)
+      const curX = cx + 110 * (1 - m), curY = cy + 130 * (1 - m)
+      const press = t > CLICK.t && t < CLICK.t + 0.15 ? 0.85 : 1
+      Object.assign($('cursor').style, { left: curX - 8 + 'px', top: curY - 4 + 'px', opacity: clamp((t - 7.5) / 0.2) * (1 - clamp((t - 9.0) / 0.3)), transform: `scale(${press})` })
+      const r = clamp((t - CLICK.t) / 0.45)
+      Object.assign($('ripple').style, { left: cx - 45 + 'px', top: cy - 45 + 'px', opacity: t > CLICK.t && r < 1 ? 1 - r : 0, transform: `scale(${0.4 + r * 1.3})` })
+      const sp = speedAt(INST, t)
+      if (sp > 1.5) Object.assign($('speed').style, { opacity: 1, right: '58px', left: 'auto', top: P.y + 18 + 'px' })
+      $('speed').textContent = `▶▶ ×${Math.round(sp)}`
+    }
+    if (s.id === 'talk' || s.id === 'answer') {
+      $('Lask').style.display = ''
+      const P = { x: 40, y: 500, w: 1000, h: 800 }
+      Object.assign($('askPane').style, { left: P.x + 'px', top: P.y + 'px', width: P.w + 'px', height: P.h + 'px' })
+      const bv = s.id === 'talk' ? ease(local / 0.35) : 1
+      $('askPane').style.opacity = bv
+      $('askPane').style.transform = `translateY(${(1 - bv) * 50}px)`
+      const ct = lerpKeys(ASK, t)
+      jobs.push(setImg($('askImg'), V3 + 'ask/' + fr(clamp(Math.round(ct * 30) + 1, 1, D.info.ask.frames))))
+      // show the top of the app (orb header + chat), 1000/1080 scale; later scroll a little so the answer is fully visible
+      const sc = 1000 / 1080
+      const scroll = s.id === 'answer' ? 480 * easeIO((t - 22.1) / 1.1) : 0
+      Object.assign($('askImg').style, { width: 1080 + 'px', height: 1500 + 'px', transform: `translate(0px, ${-scroll * sc}px) scale(${sc})` })
+      const sp = speedAt(ASK, t)
+      if (sp > 1.5) Object.assign($('speed').style, { opacity: 1, right: '58px', left: 'auto', top: P.y + 150 + 'px' })
+      $('speed').textContent = `▶▶ ×${Math.round(sp)}`
+    }
+
+    // captions
+    let html = '', who = 'jarvis'
+    for (const c of CAP) for (const g of c.groups) if (t >= g[0].a - 0.05 && t < g[g.length - 1].b + 0.12) {
+      who = c.who
+      html = (c.who === 'user' ? '<span class="w mic">🎙</span>' : '') + g.map((w) => `<span class="w${t >= w.a && t < w.b + 0.05 ? ' on' : ''}">${w.w}</span>`).join(' ')
+    }
+    $('sub').className = 'abs' + (who === 'user' ? ' user' : '')
+    $('sub').innerHTML = html ? `<div>${html}</div>` : ''
+    $('sub').style.display = s.id === 'cta' ? 'none' : 'flex'
+
+    const cut = D.cuts.find((c) => t >= c && t < c + 0.2)
+    $('flash').style.opacity = cut != null ? clamp(1 - (t - cut) / 0.2) * 0.45 : 0
+    if (t < 0.35) $('flash').style.opacity = Math.floor(t * 30) % 3 === 0 ? 0.4 : 0
+    await Promise.all(jobs)
+    return true
+  }
+</script>
+</body>
+</html>

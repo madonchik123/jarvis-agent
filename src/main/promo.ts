@@ -4,7 +4,7 @@
  * assistant (real agent runs, real computer use). The video itself is composed by promo/*.mjs.
  */
 import { BrowserWindow } from 'electron'
-import { mkdirSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, rmSync, writeFileSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { spawn, ChildProcess } from 'child_process'
 import type { Assistant } from './assistant'
@@ -103,6 +103,35 @@ export async function runPromo(o: { win: () => BrowserWindow; assistant: Assista
   }
 
   if (process.env.JARVIS_PROMO_SET === 'v2') return runV2()
+  if (process.env.JARVIS_PROMO_SET === 'v3') return runV3()
+
+  // ---------------------------------------------------------------- v3: a spoken question through the real speech engine
+  // JARVIS_PROMO_WAV = 16 kHz mono 16-bit wav of someone saying the request; it is fed like microphone input (real time),
+  // so recognition, the agent run and the answer are all real.
+  async function runV3() {
+    await view(1080, 1920, 2, true)
+    await A.opencode.newThread()
+    await sleep(500)
+    await js("window.__setPage('assistant')")
+    await sleep(1500)
+    for (let i = 0; i < 120 && !A.speech.ready; i++) await sleep(500) // speech models loaded
+    const b = readFileSync(process.env.JARVIS_PROMO_WAV!)
+    const pcm = new Int16Array(b.buffer.slice(b.byteOffset + 44, b.byteOffset + b.length - ((b.length - 44) % 2)))
+    const audio = new Float32Array(pcm.length + 16000 * 2) // + 2 s of silence so the end of speech is detected
+    for (let i = 0; i < pcm.length; i++) audio[i] = pcm[i] / 32768
+    const done = turnDone(240_000)
+    await start('ask')
+    await sleep(1500)
+    const feedAt = Date.now() - t0
+    for (let o = 0; o < audio.length; o += 1600) {
+      A.speech.feed(audio.slice(o, o + 1600).buffer)
+      await sleep(100)
+    }
+    await done
+    await sleep(3500)
+    stop('ask', { feedAtMs: feedAt, answer: '' })
+    console.log('[promo] v3 done')
+  }
 
   // ---------------------------------------------------------------- v2: harder real tasks, desktop recorded in a fixed stage
   async function runV2() {

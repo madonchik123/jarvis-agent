@@ -16,7 +16,7 @@ app.whenReady().then(async () => {
   win.webContents.setFrameRate(60)
   await win.loadFile(join(here, process.env.PROMO_HTML || 'compose.html'))
   await new Promise((r) => setTimeout(r, 800))
-  const total = await win.webContents.executeJavaScript('(window.PROMO2 || window.PROMO).total')
+  const total = await win.webContents.executeJavaScript('(window.PROMO3 || window.PROMO2 || window.PROMO).total')
   const grab = async (t) => {
     await win.webContents.executeJavaScript(`window.renderAt(${t})`)
     await new Promise((r) => setTimeout(r, 40))

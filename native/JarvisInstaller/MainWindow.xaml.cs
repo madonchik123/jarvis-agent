@@ -42,6 +42,7 @@ namespace JarvisInstaller
             var di = args.IndexOf("--dir");
             dir = di >= 0 && di + 1 < args.Count ? args[di + 1] : Setup.InstallDir();
             Localize();
+            if (demo) Topmost = true; // recordings: keep the demo window in front
             if (args.Contains("--no-launch")) LaunchAfter.IsChecked = false;
             if (args.Contains("--no-desktop")) Desktop.IsChecked = false;
             Animate(false);
@@ -112,7 +113,9 @@ namespace JarvisInstaller
         {
             if (demo)
             {
-                rel = new Release { Version = "1.2.2", File = "Jarvis-Setup-1.2.2.exe", Size = 300_336_104 };
+                // the real latest version when online, so screenshots show what users get
+                try { rel = await Task.Run(() => Setup.Latest()); }
+                catch { rel = new Release { Version = "1.3.0", File = "Jarvis-Setup-1.3.0.exe", Size = 300_485_887 }; }
             }
             else if (payload != null && File.Exists(payload))
             {
