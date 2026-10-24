@@ -29,16 +29,39 @@ let assistant: Assistant
 let mainWin: BrowserWindow | null = null
 let hudWin: BrowserWindow | null = null
 let tray: Tray | null = null
-const updater = new Updater({
-  lang: () => {
-    const l = assistant?.settings().interfaceLang
-    return l === 'ru' || l === 'en' ? l : app.getLocale().startsWith('ru') ? 'ru' : 'en'
-  },
-  parent: () => (mainWin && !mainWin.isDestroyed() && mainWin.isVisible() ? mainWin : undefined)
-})
+let updateWin: BrowserWindow | null = null
+/** small frameless Jarvis-styled window for updates (replaces system dialogs) */
+function showUpdateWindow() {
+  if (updateWin && !updateWin.isDestroyed()) {
+    updateWin.show()
+    updateWin.focus()
+    return
+  }
+  updateWin = new BrowserWindow({
+    width: 560,
+    height: 300,
+    useContentSize: true,
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    show: false,
+    // transparent so only the rounded card is drawn (an opaque frameless window has square corners)
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    title: 'Jarvis',
+    icon: resourcePath('icon.png'),
+    webPreferences: { preload: preloadPath(), sandbox: false }
+  })
+  void updateWin.loadURL(rendererUrl('update.html'))
+  updateWin.once('ready-to-show', () => updateWin?.show())
+  updateWin.on('closed', () => (updateWin = null))
+}
+const updater = new Updater({ show: showUpdateWindow })
 let quitting = false
 
-const all = () => [mainWin, hudWin].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
+const all = () => [mainWin, hudWin, updateWin].filter((w): w is BrowserWindow => !!w && !w.isDestroyed())
 const broadcast = (ch: string, ...args: unknown[]) => all().forEach((w) => w.webContents.send(ch, ...args))
 const toUi = (ch: string, ...args: unknown[]) => [mainWin, hudWin].forEach((w) => w && !w.isDestroyed() && w.webContents.send(ch, ...args))
 
@@ -292,6 +315,7 @@ function wireIpc() {
   // only ever opens plain https links (key pages) in the user's browser
   ipcMain.handle('app:openUrl', (_e, url: string) => (/^https:\/\//.test(String(url)) ? shell.openExternal(url) : undefined))
   ipcMain.handle('update:state', () => updater.state)
+  ipcMain.handle('update:close', () => updateWin?.close())
   ipcMain.handle('update:check', () => updater.check(false))
   ipcMain.handle('update:download', () => updater.download())
   ipcMain.handle('update:install', () => updater.install())
@@ -588,6 +612,29 @@ app.whenReady().then(async () => {
       await new Promise((r) => setTimeout(r, 4000))
     }
     console.log('[feed] done')
+  }
+  if (process.env.JARVIS_TEST_UPDATE) {
+    // dev: walk the update window through available → downloading → downloaded with fake data
+    const set = (p: object) => {
+      updater.state = { ...updater.state, ...p }
+      updater.emit('state', updater.state)
+    }
+    set({ status: 'available', version: '1.3.0', notes: '- Новый установщик\n- Окно обновлений в стиле Jarvis\n- Обновления ставятся тихо' })
+    const snap = async (name: string) => {
+      await new Promise((r) => setTimeout(r, 700))
+      const img = await updateWin?.webContents.capturePage()
+      if (img && process.env.JARVIS_TEST_UPDATE!.length > 2) writeFileSync(join(process.env.JARVIS_TEST_UPDATE!, `update-${name}.png`), img.toPNG())
+    }
+    showUpdateWindow()
+    await new Promise((r) => setTimeout(r, 3000))
+    await snap('available')
+    for (let p = 0; p <= 100; p += 5) {
+      set({ status: 'downloading', percent: p, bytesPerSecond: 24_000_000 })
+      await new Promise((r) => setTimeout(r, 200))
+      if (p === 60) await snap('downloading')
+    }
+    set({ status: 'downloaded' })
+    await snap('downloaded')
   }
   if (process.env.JARVIS_TEST_OVERLAY) {
     // dev: show the "Jarvis is controlling the PC" overlay for 8 s (check that it stays see-through)

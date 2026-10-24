@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Jarvis-Installer.exe: the branded web installer (~1 MB). It downloads the latest Jarvis-Setup-x.y.z.exe from GitHub Releases,
+    checks its SHA-512 against latest.yml and runs it silently, so the installed app keeps auto-updating through the same
+    package. .NET Framework 4.8 ships with Windows 10/11, so nothing else is needed.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Jarvis-Installer</AssemblyName>
+    <RootNamespace>JarvisInstaller</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ApplicationIcon>installer.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <DebugType>none</DebugType>
+    <Optimize>true</Optimize>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>..\..\release-installer\</OutputPath>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <Product>Jarvis Installer</Product>
+    <Company>Jarvis</Company>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

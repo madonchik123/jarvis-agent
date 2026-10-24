@@ -1,0 +1,219 @@
+<Window x:Class="JarvisInstaller.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Jarvis" Width="812" Height="532" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ResizeMode="CanMinimize" WindowStartupLocation="CenterScreen" UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Ideal" FontFamily="{StaticResource Body}">
+  <Border x:Name="Root" Margin="16" CornerRadius="22" BorderThickness="1" BorderBrush="#3038D6FF" ClipToBounds="True">
+    <Border.Background>
+      <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#0B1626" Offset="0" />
+        <GradientStop Color="#060B14" Offset="0.55" />
+        <GradientStop Color="#0A0F1F" Offset="1" />
+      </LinearGradientBrush>
+    </Border.Background>
+    <Grid x:Name="Inner">
+      <!-- soft colour blobs -->
+      <Ellipse Width="520" Height="520" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-200,-220,0,0" IsHitTestVisible="False">
+        <Ellipse.Fill>
+          <RadialGradientBrush>
+            <GradientStop Color="#3038D6FF" Offset="0" />
+            <GradientStop Color="#0038D6FF" Offset="1" />
+          </RadialGradientBrush>
+        </Ellipse.Fill>
+      </Ellipse>
+      <Ellipse Width="560" Height="560" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-260,-300" IsHitTestVisible="False">
+        <Ellipse.Fill>
+          <RadialGradientBrush>
+            <GradientStop Color="#287A5CFF" Offset="0" />
+            <GradientStop Color="#007A5CFF" Offset="1" />
+          </RadialGradientBrush>
+        </Ellipse.Fill>
+      </Ellipse>
+
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="44" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- title bar -->
+        <Grid Grid.Row="0" Background="Transparent" MouseLeftButtonDown="Drag">
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="22,0,0,0">
+            <Ellipse Width="9" Height="9" Fill="{StaticResource Accent}" VerticalAlignment="Center">
+              <Ellipse.Effect>
+                <DropShadowEffect Color="#38D6FF" BlurRadius="10" ShadowDepth="0" />
+              </Ellipse.Effect>
+            </Ellipse>
+            <TextBlock Text="J A R V I S" Margin="10,0,0,0" Foreground="{StaticResource Accent}" FontFamily="{StaticResource Head}" FontSize="12.5" VerticalAlignment="Center" />
+            <TextBlock x:Name="TitleSub" Text="·  Setup" Margin="10,0,0,0" Foreground="{StaticResource Muted}" FontSize="12.5" VerticalAlignment="Center" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,10,0">
+            <Button Style="{StaticResource Chrome}" Content="&#xE921;" Click="Minimize" />
+            <Button Style="{StaticResource Chrome}" Content="&#xE8BB;" Click="CloseClick" />
+          </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="1">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300" />
+            <ColumnDefinition Width="*" />
+          </Grid.ColumnDefinitions>
+
+          <!-- the orb -->
+          <Grid Grid.Column="0" Margin="0,0,0,30">
+            <Canvas x:Name="Orb" Width="240" Height="240" HorizontalAlignment="Center" VerticalAlignment="Center">
+              <Ellipse Width="240" Height="240">
+                <Ellipse.Fill>
+                  <RadialGradientBrush>
+                    <GradientStop Color="#5538D6FF" Offset="0" />
+                    <GradientStop Color="#1238D6FF" Offset="0.55" />
+                    <GradientStop Color="#0038D6FF" Offset="1" />
+                  </RadialGradientBrush>
+                </Ellipse.Fill>
+              </Ellipse>
+              <Ellipse Canvas.Left="20" Canvas.Top="20" Width="200" Height="200" Stroke="#4038D6FF" StrokeThickness="1.2" />
+              <Ellipse x:Name="Ring1" Canvas.Left="30" Canvas.Top="30" Width="180" Height="180" Stroke="#38D6FF" StrokeThickness="2.5" StrokeDashArray="1.5 5" RenderTransformOrigin="0.5,0.5" Opacity="0.85">
+                <Ellipse.RenderTransform>
+                  <RotateTransform x:Name="Rot1" />
+                </Ellipse.RenderTransform>
+              </Ellipse>
+              <Ellipse x:Name="Ring2" Canvas.Left="48" Canvas.Top="48" Width="144" Height="144" Stroke="#5538D6FF" StrokeThickness="7" StrokeDashArray="9 5" RenderTransformOrigin="0.5,0.5">
+                <Ellipse.RenderTransform>
+                  <RotateTransform x:Name="Rot2" />
+                </Ellipse.RenderTransform>
+              </Ellipse>
+              <Ellipse Canvas.Left="66" Canvas.Top="66" Width="108" Height="108" Stroke="#3080E8FF" StrokeThickness="1" />
+              <Ellipse x:Name="Core" Canvas.Left="75" Canvas.Top="75" Width="90" Height="90" RenderTransformOrigin="0.5,0.5">
+                <Ellipse.Fill>
+                  <RadialGradientBrush>
+                    <GradientStop Color="#FFFFFF" Offset="0" />
+                    <GradientStop Color="#C9F4FF" Offset="0.25" />
+                    <GradientStop Color="#38D6FF" Offset="0.6" />
+                    <GradientStop Color="#0038D6FF" Offset="1" />
+                  </RadialGradientBrush>
+                </Ellipse.Fill>
+                <Ellipse.RenderTransform>
+                  <ScaleTransform x:Name="Pulse" />
+                </Ellipse.RenderTransform>
+                <Ellipse.Effect>
+                  <DropShadowEffect Color="#38D6FF" BlurRadius="40" ShadowDepth="0" Opacity="0.9" />
+                </Ellipse.Effect>
+              </Ellipse>
+            </Canvas>
+            <TextBlock x:Name="OrbLabel" Text="ЖДУ КОМАНДЫ" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,26"
+                       Foreground="{StaticResource Accent}" FontFamily="{StaticResource Head}" FontSize="11" Opacity="0.8" />
+          </Grid>
+
+          <!-- pages -->
+          <Grid Grid.Column="1" Margin="10,10,44,34">
+
+            <!-- 1. welcome -->
+            <Grid x:Name="PageWelcome">
+              <StackPanel>
+                <TextBlock x:Name="Hello" Text="Голосовой ИИ-агент для вашего ПК" Foreground="{StaticResource Text}" FontFamily="{StaticResource Head}" FontSize="27" TextWrapping="Wrap" LineHeight="32" />
+                <TextBlock x:Name="HelloSub" Margin="0,10,0,0" Text="Говорите — Джарвис открывает программы, печатает, ищет и делает документы." Foreground="{StaticResource Muted}" FontSize="14" TextWrapping="Wrap" LineHeight="20" />
+                <StackPanel x:Name="Features" Margin="0,22,0,0" />
+                <Border Margin="0,18,0,14" Height="1" Background="#1AFFFFFF" />
+                <Grid Margin="0,0,0,12">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel>
+                    <TextBlock x:Name="PathLabel" Text="Папка установки" Foreground="{StaticResource Muted}" FontSize="12" />
+                    <TextBlock x:Name="PathText" Margin="0,3,0,0" Foreground="{StaticResource Text}" FontSize="13" TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                  <Button x:Name="ChangeBtn" Grid.Column="1" Style="{StaticResource Ghost}" Height="34" Content="Изменить" Click="ChangePath" />
+                </Grid>
+                <CheckBox x:Name="Desktop" Style="{StaticResource Toggle}" IsChecked="True" Content="Ярлык на рабочем столе" />
+                <CheckBox x:Name="LaunchAfter" Style="{StaticResource Toggle}" IsChecked="True" Content="Запустить Jarvis после установки" />
+              </StackPanel>
+              <Grid VerticalAlignment="Bottom">
+                <TextBlock x:Name="Meta" VerticalAlignment="Center" Foreground="{StaticResource Muted}" FontSize="12" />
+                <Button x:Name="InstallBtn" HorizontalAlignment="Right" Style="{StaticResource Primary}" Content="Установить" Click="Install" />
+              </Grid>
+            </Grid>
+
+            <!-- 2. progress -->
+            <Grid x:Name="PageProgress" Visibility="Collapsed">
+              <StackPanel VerticalAlignment="Center" Margin="0,0,0,40">
+                <TextBlock x:Name="ProgTitle" Text="Устанавливаю Jarvis…" Foreground="{StaticResource Text}" FontFamily="{StaticResource Head}" FontSize="27" />
+                <TextBlock x:Name="ProgStatus" Margin="0,8,0,26" Text="Подключаюсь…" Foreground="{StaticResource Muted}" FontSize="14" />
+                <Grid>
+                  <Border x:Name="Track" Height="10" CornerRadius="5" Background="#1CFFFFFF" />
+                  <Border x:Name="Fill" Height="10" CornerRadius="5" HorizontalAlignment="Left" Width="0">
+                    <Border.Background>
+                      <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#2CB8F5" Offset="0" />
+                        <GradientStop Color="#7DEBFF" Offset="1" />
+                      </LinearGradientBrush>
+                    </Border.Background>
+                    <Border.Effect>
+                      <DropShadowEffect Color="#38D6FF" BlurRadius="16" ShadowDepth="0" Opacity="0.9" />
+                    </Border.Effect>
+                  </Border>
+                </Grid>
+                <Grid Margin="0,12,0,0">
+                  <TextBlock x:Name="ProgDetail" Foreground="{StaticResource Muted}" FontSize="12.5" />
+                  <TextBlock x:Name="ProgPct" HorizontalAlignment="Right" Text="0%" Foreground="{StaticResource Accent}" FontFamily="{StaticResource Head}" FontSize="15" />
+                </Grid>
+              </StackPanel>
+              <Border VerticalAlignment="Bottom" CornerRadius="14" Background="#10FFFFFF" BorderBrush="#1A38D6FF" BorderThickness="1" Padding="16,12">
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="💡" FontFamily="Segoe UI Emoji" FontSize="15" VerticalAlignment="Center" />
+                  <Canvas x:Name="TipView" Grid.Column="1" Margin="10,0,0,0" Height="20" ClipToBounds="True">
+                    <Canvas.OpacityMask>
+                      <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="Transparent" Offset="0" />
+                        <GradientStop Color="Black" Offset="0.03" />
+                        <GradientStop Color="Black" Offset="0.95" />
+                        <GradientStop Color="Transparent" Offset="1" />
+                      </LinearGradientBrush>
+                    </Canvas.OpacityMask>
+                    <TextBlock x:Name="Tip" Foreground="{StaticResource Text}" FontSize="13" TextWrapping="NoWrap" Canvas.Top="1">
+                      <TextBlock.RenderTransform>
+                        <TranslateTransform x:Name="TipShift" />
+                      </TextBlock.RenderTransform>
+                    </TextBlock>
+                  </Canvas>
+                </Grid>
+              </Border>
+            </Grid>
+
+            <!-- 3. done -->
+            <Grid x:Name="PageDone" Visibility="Collapsed">
+              <StackPanel VerticalAlignment="Center" Margin="0,0,0,40">
+                <TextBlock x:Name="DoneTitle" Text="Готово, сэр." Foreground="{StaticResource Text}" FontFamily="{StaticResource Head}" FontSize="32" />
+                <TextBlock x:Name="DoneText" Margin="0,12,0,0" Text="Jarvis установлен." Foreground="{StaticResource Muted}" FontSize="14.5" TextWrapping="Wrap" LineHeight="21" />
+                <Border Margin="0,22,0,0" CornerRadius="14" Background="#1238D6FF" BorderBrush="#3338D6FF" BorderThickness="1" Padding="18,14">
+                  <TextBlock x:Name="DoneHint" Foreground="{StaticResource Text}" FontSize="14" TextWrapping="Wrap" LineHeight="21" />
+                </Border>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                <Button x:Name="CloseBtn" Style="{StaticResource Ghost}" Content="Закрыть" Margin="0,0,12,0" Click="CloseClick" />
+                <Button x:Name="LaunchBtn" Style="{StaticResource Primary}" Content="Запустить Jarvis" Click="Launch" />
+              </StackPanel>
+            </Grid>
+
+            <!-- 4. error -->
+            <Grid x:Name="PageError" Visibility="Collapsed">
+              <StackPanel VerticalAlignment="Center" Margin="0,0,0,40">
+                <TextBlock x:Name="ErrTitle" Text="Не получилось" Foreground="#FF8A8A" FontFamily="{StaticResource Head}" FontSize="27" />
+                <TextBlock x:Name="ErrText" Margin="0,12,0,0" Foreground="{StaticResource Text}" FontSize="14" TextWrapping="Wrap" LineHeight="21" />
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                <Button x:Name="ManualBtn" Style="{StaticResource Ghost}" Content="Скачать вручную" Margin="0,0,12,0" Click="Manual" />
+                <Button x:Name="RetryBtn" Style="{StaticResource Primary}" Content="Повторить" Click="Install" />
+              </StackPanel>
+            </Grid>
+          </Grid>
+        </Grid>
+      </Grid>
+    </Grid>
+  </Border>
+</Window>

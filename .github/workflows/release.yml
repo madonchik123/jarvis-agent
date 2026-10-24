@@ -25,6 +25,11 @@ jobs:
       - run: npm run build
       - name: Package installer
         run: npx electron-builder --win --x64 --publish never
+      - name: Branded web installer
+        shell: pwsh
+        run: |
+          npm run installer
+          Copy-Item release-installer\Jarvis-Installer.exe release\Jarvis-Installer.exe
       - name: Checksums
         shell: pwsh
         run: |
@@ -42,10 +47,11 @@ jobs:
           $notes = @"
           ## Jarvis $tag — Windows
 
-          Download **Jarvis-Setup-*.exe** below and run it (Windows 10/11 x64).
-          The installer is unsigned, so SmartScreen may warn: *More info → Run anyway*.
+          **Download [Jarvis-Installer.exe](https://github.com/madonchik123/jarvis-agent/releases/latest/download/Jarvis-Installer.exe)** (≈ 0.3 MB) and run it — it fetches the latest version, verifies it and installs (Windows 10/11 x64).
+          Offline / fallback: **Jarvis-Setup-*.exe** (the full package; also used by auto-update).
+          Both are unsigned, so SmartScreen may warn: *More info → Run anyway*.
 
-          On first run Jarvis downloads its on-device speech models (~350 MB). The AI agent works with free opencode models without a key.
+          On first run Jarvis downloads its on-device speech models (~500 MB) by itself. The AI agent works with free OpenCode models — no key, no sign-up.
           Setup guide, connectors and everything it can do: see the README.
 
           **Platform support:** Windows only for now — computer use, OCR and window control rely on Windows APIs. macOS/Linux are not supported yet.

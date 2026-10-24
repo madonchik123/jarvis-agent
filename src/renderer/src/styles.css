@@ -2054,3 +2054,22 @@ button {
 .assistant-page.narrow .live-steps {
   display: none;
 }
+
+/* ---------------------------------------------------------------- update window */
+body.update { background: transparent; }
+.upd { position: fixed; inset: 0; display: flex; align-items: center; gap: 22px; padding: 26px 30px 24px 18px; border: 1px solid rgba(56, 214, 255, 0.22); border-radius: 16px; overflow: hidden;
+  background: radial-gradient(420px 300px at 10% 0%, rgba(56, 214, 255, 0.16), transparent 70%), radial-gradient(420px 320px at 100% 100%, rgba(122, 92, 255, 0.14), transparent 70%), #070c16; }
+.upd-drag { position: absolute; left: 0; right: 40px; top: 0; height: 30px; -webkit-app-region: drag; }
+.upd-x { position: absolute; top: 8px; right: 10px; width: 28px; height: 28px; border-radius: 8px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; }
+.upd-x:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.upd-orb { flex: none; width: 130px; display: grid; place-items: center; }
+.upd-body { flex: 1; min-width: 0; }
+.upd-ver { font-family: var(--font-head); font-size: 11px; letter-spacing: 0.18em; color: var(--accent); text-transform: uppercase; }
+.upd h2 { margin: 6px 0 6px; font-family: var(--font-head); font-size: 22px; color: var(--text); }
+.upd-sub { margin: 0 0 12px; color: var(--muted); font-size: 13.5px; line-height: 1.45; }
+.upd-notes { margin: 0 0 14px; padding-left: 18px; color: var(--text-2); font-size: 13px; line-height: 1.5; max-height: 80px; overflow: hidden; }
+.upd-track { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.upd-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #2cb8f5, #7debff); box-shadow: 0 0 14px var(--accent-glow); }
+.upd-meta { display: flex; justify-content: space-between; margin: 8px 0 14px; color: var(--muted); font-size: 12px; }
+.upd-pct { color: var(--accent); font-family: var(--font-head); }
+.upd-actions { display: flex; justify-content: flex-end; gap: 10px; }

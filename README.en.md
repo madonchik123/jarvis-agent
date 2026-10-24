@@ -78,7 +78,7 @@ opencode serve (agent)  ·  MCP tools & connectors  ·  jarvis-native (C#: UI Au
 ## Install
 
 ### Option A — installer
-Download `Jarvis-Setup-x.y.z.exe` from the repository's **[Releases](https://github.com/madonchik123/jarvis-agent/releases)** and run it. The installer is unsigned, so Windows SmartScreen may warn: *More info → Run anyway*. Everything it needs ships inside (opencode, the C# engine, the VC++ runtime for Piper); the speech models (~530 MB) download by themselves on first launch with no clicks: progress shows in the setup window, you can use Jarvis meanwhile, and a dropped connection is retried. After that the app updates itself (with your consent).
+Download **[Jarvis-Installer.exe](https://github.com/madonchik123/jarvis-agent/releases/latest/download/Jarvis-Installer.exe)** (≈ 0.3 MB) and run it: the branded installer fetches the latest version, verifies its checksum and installs it — one “Install” button. Offline, or if anything goes wrong, use the full `Jarvis-Setup-x.y.z.exe` from **[Releases](https://github.com/madonchik123/jarvis-agent/releases)**. The installers are unsigned, so Windows SmartScreen may warn: *More info → Run anyway*. Everything it needs ships inside (opencode, the C# engine, the VC++ runtime for Piper); the speech models (~530 MB) download by themselves on first launch with no clicks: progress shows in the setup window, you can use Jarvis meanwhile, and a dropped connection is retried. After that the app updates itself: a Jarvis window shows the new version, downloads it and restarts silently (with your consent).
 
 ### Option B — from source
 ```bash
@@ -260,7 +260,7 @@ npm run build
 npm run dist       # unsigned NSIS installer in release/
 ```
 
-Layout: `src/main` (assistant orchestrator, opencode server manager, MCP tool server, computer-use layer, speech engine, TTS, updater), `src/renderer` (React UI: assistant, commands, memory, settings, HUD, overlays), `src/shared` (types, connector catalogue, routine steps), `native/JarvisNative` (C# computer-use engine), `resources/bridge.ps1` (PowerShell fallback bridge), `voice/` (optional clone tooling), `promo/` (the scripts that produced the promo video), `scripts/` (benchmarks and smoke tests).
+Layout: `src/main` (assistant orchestrator, opencode server manager, MCP tool server, computer-use layer, speech engine, TTS, updater), `src/renderer` (React UI: assistant, commands, memory, settings, HUD, overlays), `src/shared` (types, connector catalogue, routine steps), `native/JarvisNative` (C# computer-use engine), `native/JarvisInstaller` (branded web installer, WPF), `resources/bridge.ps1` (PowerShell fallback bridge), `voice/` (optional clone tooling), `promo/` (the scripts that produced the promo video), `scripts/` (benchmarks and smoke tests).
 
 Debug helpers are environment-gated (`JARVIS_SHOTS`, `JARVIS_TEST_*`, `JARVIS_USERDATA`, `JARVIS_PROMO`) in `src/main/index.ts`.
 

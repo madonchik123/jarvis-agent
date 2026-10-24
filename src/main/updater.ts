@@ -1,4 +1,4 @@
-import { app, dialog, type BrowserWindow } from 'electron'
+import { app } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { EventEmitter } from 'events'
 import type { UpdateState } from '../shared/types'
@@ -10,40 +10,18 @@ import type { UpdateState } from '../shared/types'
  * Nothing is installed without asking: "ask" mode asks before downloading, both modes ask before restarting.
  */
 
-const TEXT = {
-  ru: {
-    title: 'Обновление Джарвиса',
-    available: (v: string) => `Доступна новая версия Джарвиса — ${v}.`,
-    availableDetail: 'Загрузить и установить сейчас? Загрузка идёт в фоне.',
-    update: 'Обновить',
-    later: 'Позже',
-    downloaded: (v: string) => `Версия ${v} загружена и готова к установке.`,
-    downloadedDetail: 'Перезапустить Джарвиса и установить сейчас? Если выбрать «Позже», обновление установится при следующем выходе.',
-    restart: 'Перезапустить'
-  },
-  en: {
-    title: 'Jarvis update',
-    available: (v: string) => `A new version of Jarvis is available — ${v}.`,
-    availableDetail: 'Download and install it now? It downloads in the background.',
-    update: 'Update',
-    later: 'Later',
-    downloaded: (v: string) => `Version ${v} is downloaded and ready to install.`,
-    downloadedDetail: 'Restart Jarvis and install now? If you choose Later, it installs the next time you quit.',
-    restart: 'Restart'
-  }
+export interface UpdatePromptHost {
+  /** open (or focus) the update window; it reads the state over IPC and lets the user decide */
+  show: () => void
 }
 
-export interface UpdatePromptHost {
-  lang: () => 'ru' | 'en'
-  parent: () => BrowserWindow | undefined
-}
 export class Updater extends EventEmitter {
   state: UpdateState = { status: 'idle', current: app.getVersion() }
   private timer: NodeJS.Timeout | null = null
   private mode: 'ask' | 'auto' | 'off' = 'ask'
   /** versions already asked about this session, so the 6-hourly check doesn't nag */
   private asked = new Set<string>()
-  private host: UpdatePromptHost = { lang: () => 'en', parent: () => undefined }
+  private host: UpdatePromptHost = { show: () => {} }
 
   constructor(host?: UpdatePromptHost) {
     super()
@@ -121,27 +99,20 @@ export class Updater extends EventEmitter {
     return this.state
   }
 
-  private async prompt(key: string, message: string, detail: string, yes: string) {
-    if (this.asked.has(key)) return false
-    this.asked.add(key)
-    const t = TEXT[this.host.lang()]
-    const opts = { type: 'info' as const, title: t.title, message, detail, buttons: [yes, t.later], defaultId: 0, cancelId: 1, noLink: true }
-    const parent = this.host.parent()
-    const r = parent && !parent.isDestroyed() ? await dialog.showMessageBox(parent, opts) : await dialog.showMessageBox(opts)
-    return r.response === 0
-  }
-
   private async askDownload(version: string) {
-    const t = TEXT[this.host.lang()]
-    if (await this.prompt('dl:' + version, t.available(version), t.availableDetail, t.update)) void this.download()
+    if (this.asked.has('dl:' + version)) return
+    this.asked.add('dl:' + version)
+    this.host.show()
   }
 
   private async askRestart(version: string) {
-    const t = TEXT[this.host.lang()]
-    if (await this.prompt('in:' + version, t.downloaded(version), t.downloadedDetail, t.restart)) this.install()
+    if (this.asked.has('in:' + version)) return
+    this.asked.add('in:' + version)
+    this.host.show()
   }
 
   install() {
-    if (this.state.status === 'downloaded') autoUpdater.quitAndInstall(false, true)
+    // silent: no installer window, Jarvis just restarts on the new version
+    if (this.state.status === 'downloaded') autoUpdater.quitAndInstall(true, true)
   }
 }

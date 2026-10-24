@@ -36,3 +36,6 @@ resources/native/
 native/**/bin/
 native/**/obj/
 resources/vendor/
+build/*.png
+release-installer/
+native/**/bin/
